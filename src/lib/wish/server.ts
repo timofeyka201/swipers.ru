@@ -23,8 +23,9 @@ const reservedKey = (userId: string) => `wishres:${userId}`;
 /** Список желаний на сотню карточек с картинками в полмегабайта не влезет — и не должен. */
 const MAX_BYTES = 600_000;
 
-export const displayName = (user: Pick<UserRecord, "name" | "email">): string =>
-  user.name?.trim() || user.email.split("@")[0];
+export const displayName = (
+  user: Pick<UserRecord, "name" | "email" | "nickname">,
+): string => user.nickname || user.name?.trim() || "Пользователь";
 
 function newCode(): string {
   let out = "";
