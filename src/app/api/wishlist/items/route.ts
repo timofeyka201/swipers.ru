@@ -64,12 +64,16 @@ export async function POST(req: Request) {
     if (!roomFor(list)) break;
     list.items.unshift(
       buildItem({
-        source: "swiper",
+        source: product.source === "custom" ? "custom" : "swiper",
         title: product.title,
         price: product.price,
         currency: product.currency,
         url: safeUrl(product.url),
         image: safeUrl(product.images?.[0]),
+        note:
+          product.source === "custom"
+            ? clip(product.description ?? "", MAX_NOTE)
+            : undefined,
         product,
       }),
     );
