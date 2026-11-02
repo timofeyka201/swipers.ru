@@ -33,7 +33,13 @@ export default function ProductSheet({
     )
     .slice(0, 6);
   const share = async () => {
-    const data = { title: p.title, url: cardUrlAbsolute(p) };
+    const data = {
+      title: p.title,
+      url:
+        p.source === "custom"
+          ? p.url || window.location.href
+          : cardUrlAbsolute(p),
+    };
     try {
       if (navigator.share) await navigator.share(data);
       else {
