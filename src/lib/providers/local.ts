@@ -1,11 +1,27 @@
-import { catalogCategories, catalogGroups, catalogInfo, catalogProducts, catalogTags } from "../catalog";
+import {
+  catalogCategories,
+  catalogGroups,
+  catalogInfo,
+  catalogProducts,
+  catalogTags,
+} from "../catalog";
 import { categoryLabel, groupLabel, OTHER_GROUP } from "../categories";
 import { baseId } from "../ids";
 import type { Product } from "../types";
 import { toRub } from "../money";
 import type { TasteHint } from "../taste";
 import { searchCatalog } from "../search";
-import { decodeCursor, encodeCursor, mulberry32, shuffle, type Filters, type GroupFacet, type PageArgs, type Provider, type ProviderPage } from "./types";
+import {
+  decodeCursor,
+  encodeCursor,
+  mulberry32,
+  shuffle,
+  type Filters,
+  type GroupFacet,
+  type PageArgs,
+  type Provider,
+  type ProviderPage,
+} from "./types";
 
 /**
  * Собственная база товаров: файл data/catalog.json, который отдаётся
@@ -112,7 +128,8 @@ function buildGroupFacets(all: Product[]): GroupFacet[] {
     inside.set(label, (inside.get(label) ?? 0) + 1);
   }
 
-  const size = (inside: Map<string, number>) => [...inside.values()].reduce((a, b) => a + b, 0);
+  const size = (inside: Map<string, number>) =>
+    [...inside.values()].reduce((a, b) => a + b, 0);
   return [...counts.entries()]
     .filter(([, inside]) => size(inside) >= 2)
     .sort((a, b) => size(b[1]) - size(a[1]) || a[0].localeCompare(b[0], "ru"))
@@ -142,24 +159,50 @@ export function facets(): {
     groups: buildGroupFacets(all),
     // Метки нужны тесту вкусов: спрашивать про то, чего в каталоге нет, незачем.
     tags: catalogTags(),
-    maxPrice: all.reduce((max, p) => (p.price !== undefined && p.price > max ? p.price : max), 0),
+    maxPrice: all.reduce(
+      (max, p) => (p.price !== undefined && p.price > max ? p.price : max),
+      0,
+    ),
     currency: all[0]?.currency ?? "RUB",
   };
 }
 
-export function meta(): { kind: string; generatedAt: string | null; total: number; categories: string[]; source: string } {
+export function meta(): {
+  kind: string;
+  generatedAt: string | null;
+  total: number;
+  categories: string[];
+  source: string;
+} {
   const info = catalogInfo();
   return { ...info, categories: catalogCategories() };
 }
 
 /** Фильтры применяются к своей базе — у неё есть и категории, и цены. */
-function passes(p: Product, f?: Filters): boolean {
+function passes(
+  p: Product,
+  f?: Filters,
+  rates: Record<string, number> = {},
+): boolean {
   if (!f) return true;
   if (f.group && groupLabel(p) !== f.group) return false;
   // В фильтре лежат ярлыки, а не слаги — так совпадают синонимы из разных источников.
-  if (f.categories?.length && (!p.category || !f.categories.includes(categoryLabel(p.category)))) return false;
-  if (f.maxPrice !== undefined && (p.price === undefined || p.price > f.maxPrice)) return false;
-  if (f.onlyDiscount && !(p.priceMax !== undefined && p.price !== undefined && p.priceMax > p.price)) return false;
+  if (
+    f.categories?.length &&
+    (!p.category || !f.categories.includes(categoryLabel(p.category)))
+  )
+    return false;
+  const price =
+    f.priceCurrency === "RUB" ? toRub(p.price, p.currency, rates) : p.price;
+  if (f.minPrice !== undefined && (price === undefined || price < f.minPrice))
+    return false;
+  if (f.maxPrice !== undefined && (price === undefined || price > f.maxPrice))
+    return false;
+  if (
+    f.onlyDiscount &&
+    !(p.priceMax !== undefined && p.price !== undefined && p.priceMax > p.price)
+  )
+    return false;
   return true;
 }
 
@@ -168,7 +211,11 @@ function passes(p: Product, f?: Filters): boolean {
  * перебивал остальные полностью: лента должна подстраиваться, но не схлопываться
  * в одну категорию.
  */
-function score(p: Product, hint: TasteHint | undefined, rnd: () => number): number {
+function score(
+  p: Product,
+  hint: TasteHint | undefined,
+  rnd: () => number,
+): number {
   // Небольшой шум не даёт ленте застыть в одном и том же порядке.
   let value = rnd() * 1.2;
   if (!hint) return value;
@@ -193,14 +240,18 @@ function score(p: Product, hint: TasteHint | undefined, rnd: () => number): numb
   if (hint.budget !== undefined && p.price !== undefined) {
     const rub = toRub(p.price, p.currency, hint.rates ?? {}) ?? p.price;
     // Выход за бюджет наказывается тем сильнее, чем сильнее превышение.
-    if (rub > hint.budget) value -= Math.min(4, 1.5 + (rub / hint.budget - 1) * 2);
+    if (rub > hint.budget)
+      value -= Math.min(4, 1.5 + (rub / hint.budget - 1) * 2);
   }
   return value;
 }
 
 /** Название источника по снапшоту: витрина на AliExpress не должна называться
  *  «своей базой» — человек видит этот ярлык в настройках. */
-const SNAPSHOT_LABEL: Record<string, string> = { ae: "AliExpress", global: "Открытый каталог" };
+const SNAPSHOT_LABEL: Record<string, string> = {
+  ae: "AliExpress",
+  global: "Открытый каталог",
+};
 
 /**
  * Страница из окна кандидатов: большая часть — под вкус, остаток — разведка.
@@ -214,10 +265,15 @@ function pick(found: Product[], hint: TasteHint, rnd: () => number): Product[] {
     .map((p) => ({ p, s: score(p, hint, rnd) }))
     .sort((a, b) => b.s - a.s);
 
-  const liked = Math.min(scored.length, Math.max(1, Math.round(PAGE * TASTE_SHARE)));
+  const liked = Math.min(
+    scored.length,
+    Math.max(1, Math.round(PAGE * TASTE_SHARE)),
+  );
   // Помечаем, кто сюда попал по вкусу, а кто разведкой: по этой пометке
   // статистика потом считает, окупается ли разведка.
-  const out: Product[] = scored.slice(0, liked).map((x) => ({ ...x.p, why: "taste" as const }));
+  const out: Product[] = scored
+    .slice(0, liked)
+    .map((x) => ({ ...x.p, why: "taste" as const }));
 
   /*
    * Разведка — это «покажи что-нибудь ещё», и порядок предпочтений тут
@@ -228,7 +284,8 @@ function pick(found: Product[], hint: TasteHint, rnd: () => number): Product[] {
    * честно станет лентой любимого.
    */
   const open = scored.slice(liked).map((x) => x.p);
-  const weightOf = (p: Product) => hint.categories?.[categoryLabel(p.category)] ?? 0;
+  const weightOf = (p: Product) =>
+    hint.categories?.[categoryLabel(p.category)] ?? 0;
   const already = new Set(out.map((p) => categoryLabel(p.category)));
   const fresh = (p: Product) => !already.has(categoryLabel(p.category));
   const tiers = [
@@ -269,13 +326,20 @@ export const localProvider: Provider = {
   needsToken: false,
   ready: () => catalogProducts().length > 0,
 
-  async page({ query, cursor, seed, filters, hint }: PageArgs): Promise<ProviderPage> {
+  async page({
+    query,
+    cursor,
+    seed,
+    filters,
+    hint,
+  }: PageArgs): Promise<ProviderPage> {
     const { offset, round } = decodeCursor(cursor);
 
     // Снимок берём один раз на запрос: между строками он может смениться, если
     // импортёр как раз дописал новый.
     const all = catalogProducts();
-    if (!all.length) return { products: [], cursor: encodeCursor(0, round), looped: false };
+    if (!all.length)
+      return { products: [], cursor: encodeCursor(0, round), looped: false };
 
     // Отвергнутое исключаем жёстко: свайп влево — это «больше не показывай».
     // Приходить могут и карточки с суффиксом круга — сверяем по товару.
@@ -296,8 +360,10 @@ export const localProvider: Provider = {
      * запасной каталог, у которого разделов нет вовсе, показал бы пустую
      * ленту.
      */
-    const hideUngrouped = filters?.group !== OTHER_GROUP && catalogGroups().length > 0;
-    const allowed = (p: Product) => (hideUngrouped && !p.group ? false : passes(p, filters));
+    const hideUngrouped =
+      filters?.group !== OTHER_GROUP && catalogGroups().length > 0;
+    const allowed = (p: Product) =>
+      hideUngrouped && !p.group ? false : passes(p, filters, hint?.rates ?? {});
 
     /*
      * Поиск идёт отдельной дорогой.
@@ -309,7 +375,7 @@ export const localProvider: Provider = {
      */
     if (query.trim()) {
       const { ranked, total, loose } = searchCatalog(all, query, {
-        accept: (p) => passes(p, filters),
+        accept: (p) => passes(p, filters, hint?.rates ?? {}),
         filterKey: JSON.stringify(filters ?? {}),
       });
       const found: Product[] = [];
@@ -317,7 +383,13 @@ export const localProvider: Provider = {
       for (; i < ranked.length && found.length < PAGE; i++) {
         if (!banned.has(ranked[i].id)) found.push(ranked[i]);
       }
-      return { products: found, cursor: encodeCursor(i, 0), looped: false, total, loose };
+      return {
+        products: found,
+        cursor: encodeCursor(i, 0),
+        looped: false,
+        total,
+        loose,
+      };
     }
 
     /*
@@ -326,7 +398,10 @@ export const localProvider: Provider = {
      * это весь каталог за один заход — и лента пошла бы по второму кругу
      * сразу же. Больше восьмой части витрины за страницу не берём.
      */
-    const pool = Math.max(PAGE * 3, Math.min(POOL, Math.floor(all.length / 12)));
+    const pool = Math.max(
+      PAGE * 3,
+      Math.min(POOL, Math.floor(all.length / 12)),
+    );
 
     /** Отбор подряд с места остановки: что набрали и докуда дошли. */
     const collect = (list: Product[], from: number, skip: Set<string>) => {
@@ -353,7 +428,11 @@ export const localProvider: Provider = {
      */
     const narrowed = !!(
       filters &&
-      (filters.group || filters.categories?.length || filters.maxPrice !== undefined || filters.onlyDiscount)
+      (filters.group ||
+        filters.categories?.length ||
+        filters.maxPrice !== undefined ||
+        filters.minPrice !== undefined ||
+        filters.onlyDiscount)
     );
 
     /**
@@ -384,7 +463,9 @@ export const localProvider: Provider = {
      * возвращается — но только когда на витрине не осталось вообще ничего
      * другого, и показать то же самое честнее, чем пустой экран.
      */
-    const recent = new Set((hint?.exclude ?? []).slice(0, PAGE * 3).map(baseId));
+    const recent = new Set(
+      (hint?.exclude ?? []).slice(0, PAGE * 3).map(baseId),
+    );
     const attempts = [
       { r: round, from: offset, skip: banned },
       { r: round + 1, from: 0, skip: banned },
@@ -413,7 +494,8 @@ export const localProvider: Provider = {
       const rnd = mulberry32(seed + r * 104729 + from);
       const picked = hint ? pick(found, hint, rnd) : found.slice(0, PAGE);
 
-      const products = r > 0 ? picked.map((p) => ({ ...p, id: `${p.id}-r${r}` })) : picked;
+      const products =
+        r > 0 ? picked.map((p) => ({ ...p, id: `${p.id}-r${r}` })) : picked;
       return { products, cursor: encodeCursor(next, r), looped: r !== round };
     }
 
