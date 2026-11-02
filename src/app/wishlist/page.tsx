@@ -10,7 +10,7 @@ import WishCardForm from "@/components/WishCardForm";
 import WishlistShare from "@/components/WishlistShare";
 import Sheet from "@/components/Sheet";
 import { useHydrated, useStore } from "@/lib/store";
-import { formatRub } from "@/lib/money";
+import { formatRub, plural } from "@/lib/money";
 import {
   loadMyWishlist,
   loadReservations,
@@ -62,6 +62,8 @@ export default function Wishlist() {
     if (hydrated && !s.account) {
       setView(null);
       setGifts([]);
+      setLoading(false);
+      setError("");
     }
   }, [hydrated, s.account, refresh]);
   useEffect(() => {
@@ -212,7 +214,11 @@ export default function Wishlist() {
             )}
             <div className="ui-wish-toolbar">
               <strong>
-                {items.length ? items.length + " желаний" : "Ваши желания"}
+                {items.length
+                  ? items.length +
+                    " " +
+                    plural(items.length, "желание", "желания", "желаний")
+                  : "Ваши желания"}
               </strong>
               <button
                 onClick={() => {
