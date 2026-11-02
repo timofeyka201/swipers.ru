@@ -6,7 +6,16 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { baseId, sameProduct } from "./ids";
 import { DEFAULT_RATES, toRub } from "./money";
 import { emptySizes, type SizeProfile } from "./sizes";
-import { decay, emptyTaste, learn, learnReason, learnVisit, unlearn, type RejectReason, type Taste } from "./taste";
+import {
+  decay,
+  emptyTaste,
+  learn,
+  learnReason,
+  learnVisit,
+  unlearn,
+  type RejectReason,
+  type Taste,
+} from "./taste";
 import type { Filters } from "./providers/types";
 import type { Product } from "./types";
 
@@ -25,7 +34,13 @@ export type Stats = {
 
 /** Слежение за ценой: что стоил товар в момент, когда его отложили. */
 export type PriceWatch = { price: number; currency: string; since: string };
-export type Account = { id: string; email: string; name?: string; createdAt: string; emailVerified?: boolean };
+export type Account = {
+  id: string;
+  email: string;
+  name?: string;
+  createdAt: string;
+  emailVerified?: boolean;
+};
 
 /**
  * Личные данные из раздела «Профиль». Лежат рядом с аккаунтом, а не внутри
@@ -69,10 +84,24 @@ export type SyncedProfile = {
   tasted: boolean;
   updatedAt: number;
 };
-export type PriceDrop = { id: string; title: string; image?: string; was: number; now: number; currency: string };
+export type PriceDrop = {
+  id: string;
+  title: string;
+  image?: string;
+  was: number;
+  now: number;
+  currency: string;
+};
 
 const today = () => new Date().toISOString().slice(0, 10);
-const emptyStats = (): Stats => ({ swipes: 0, likes: 0, streak: 0, bestStreak: 0, day: today(), daySwipes: 0 });
+const emptyStats = (): Stats => ({
+  swipes: 0,
+  likes: 0,
+  streak: 0,
+  bestStreak: 0,
+  day: today(),
+  daySwipes: 0,
+});
 
 export const DAILY_GOAL = 20;
 
@@ -128,7 +157,12 @@ type State = {
   exportProfile: () => SyncedProfile;
   importProfile: (profile: SyncedProfile) => void;
   startFeed: (opts: { provider: string | null; query: string }) => void;
-  appendPage: (products: Product[], cursor: string, provider: string, providerLabel: string) => void;
+  appendPage: (
+    products: Product[],
+    cursor: string,
+    provider: string,
+    providerLabel: string,
+  ) => void;
   decide: (decision: Decision) => Product | undefined;
   undo: () => void;
   unlike: (id: string) => void;
@@ -147,11 +181,18 @@ type State = {
   removeFromCart: (id: string) => void;
   clearCart: () => void;
   /** Курс приехал с сервера: он общий для всех и руками не правится. */
-  setRates: (rates: Record<string, number>, info: { date: string | null; source: string }) => void;
+  setRates: (
+    rates: Record<string, number>,
+    info: { date: string | null; source: string },
+  ) => void;
   setFilters: (filters: Filters) => void;
   setTheme: (theme: "system" | "light" | "dark") => void;
   finishOnboarding: () => void;
-  finishTaste: (picked: string[], budget?: number, tags?: Record<string, number>) => void;
+  finishTaste: (
+    picked: string[],
+    budget?: number,
+    tags?: Record<string, number>,
+  ) => void;
   answerReason: (reason: RejectReason | null) => void;
   setSizes: (sizes: SizeProfile) => void;
   /** Пересчитать веса вкуса с поправкой на прошедшее время. */
@@ -202,7 +243,32 @@ export const useStore = create<State>()(
       seed: Math.floor(Math.random() * 1e9),
 
       // Выход должен уносить и счётчик: чужое число желаний в меню — мелочь, но вранье.
-      setAccount: (account) => set(account ? { account } : { account: null, wishTotal: null }),
+      setAccount: (account) =>
+        set((s) =>
+          account && (!s.account || s.account.id === account.id)
+            ? { account }
+            : {
+                account,
+                wishTotal: null,
+                liked: [],
+                wishlist: [],
+                cart: [],
+                orders: [],
+                watch: {},
+                rejected: [],
+                seen: [],
+                history: [],
+                deck: [],
+                index: 0,
+                cursor: null,
+                taste: emptyTaste(),
+                stats: emptyStats(),
+                tasted: false,
+                sizes: emptySizes(),
+                person: emptyPerson(),
+                updatedAt: 0,
+              },
+        ),
 
       exportProfile: () => {
         const s = get();
@@ -211,8 +277,8 @@ export const useStore = create<State>()(
           wishlist: s.wishlist,
           cart: s.cart,
           taste: s.taste,
-          sizes: s.sizes,
-          person: s.person,
+          sizes: emptySizes(),
+          person: emptyPerson(),
           orders: s.orders,
           watch: s.watch,
           rejected: s.rejected,
@@ -233,8 +299,8 @@ export const useStore = create<State>()(
           wishlist: profile.wishlist ?? [],
           cart: profile.cart ?? [],
           taste: profile.taste ?? emptyTaste(),
-          sizes: profile.sizes ?? emptySizes(),
-          person: profile.person ?? emptyPerson(),
+          sizes: emptySizes(),
+          person: emptyPerson(),
           orders: profile.orders ?? [],
           watch: profile.watch ?? {},
           rejected: profile.rejected ?? [],
@@ -249,7 +315,15 @@ export const useStore = create<State>()(
         }),
 
       startFeed: ({ provider, query }) =>
-        set({ deck: [], index: 0, history: [], cursor: null, provider, query, seed: Math.floor(Math.random() * 1e9) }),
+        set({
+          deck: [],
+          index: 0,
+          history: [],
+          cursor: null,
+          provider,
+          query,
+          seed: Math.floor(Math.random() * 1e9),
+        }),
 
       appendPage: (products, cursor, provider, providerLabel) =>
         set((s) => {
@@ -260,9 +334,18 @@ export const useStore = create<State>()(
            * карточки подряд, а отмена возвращала «ту же самую» — она и была
            * та же, просто из другого круга.
            */
-          const known = new Set([...s.deck.map((p) => baseId(p.id)), ...s.seen.map(baseId), ...s.rejected.map(baseId)]);
+          const known = new Set([
+            ...s.deck.map((p) => baseId(p.id)),
+            ...s.seen.map(baseId),
+            ...s.rejected.map(baseId),
+          ]);
           const fresh = products.filter((p) => !known.has(baseId(p.id)));
-          return { deck: [...s.deck, ...fresh], cursor, provider, providerLabel };
+          return {
+            deck: [...s.deck, ...fresh],
+            cursor,
+            provider,
+            providerLabel,
+          };
         }),
 
       decide: (decision) => {
@@ -286,10 +369,13 @@ export const useStore = create<State>()(
         }
 
         const liked =
-          decision === "dislike" || s.liked.some((p) => p.id === product.id) ? s.liked : [product, ...s.liked];
+          decision === "dislike" || s.liked.some((p) => p.id === product.id)
+            ? s.liked
+            : [product, ...s.liked];
 
         const cart =
-          decision === "super" && !s.cart.some((c) => c.product.id === product.id)
+          decision === "super" &&
+          !s.cart.some((c) => c.product.id === product.id)
             ? [{ product, qty: 1 }, ...s.cart]
             : s.cart;
 
@@ -308,7 +394,10 @@ export const useStore = create<State>()(
          * всего — на втором круге. Сервер исключал «ae-123», а приезжало
          * «ae-123-r1», и витрина шла по третьему кругу теми же товарами.
          */
-        const rejected = decision === "dislike" ? [baseId(product.id), ...s.rejected].slice(0, 2000) : s.rejected;
+        const rejected =
+          decision === "dislike"
+            ? [baseId(product.id), ...s.rejected].slice(0, 2000)
+            : s.rejected;
 
         let dislikesSinceAsk = s.dislikesSinceAsk;
         let pendingReason = s.pendingReason;
@@ -333,7 +422,8 @@ export const useStore = create<State>()(
           history: [{ product, decision }, ...s.history].slice(0, 30),
           stats,
           taste: learn(s.taste, product, decision),
-          watch: decision === "dislike" ? s.watch : rememberPrice(s.watch, product),
+          watch:
+            decision === "dislike" ? s.watch : rememberPrice(s.watch, product),
         });
         return product;
       },
@@ -352,13 +442,20 @@ export const useStore = create<State>()(
         set((s) => {
           const [last, ...rest] = s.history;
           if (!last) return s;
-          const inDeck = s.index > 0 && sameProduct(s.deck[s.index - 1]?.id ?? "", last.product.id);
+          const inDeck =
+            s.index > 0 &&
+            sameProduct(s.deck[s.index - 1]?.id ?? "", last.product.id);
           // Возвращая карточку, убираем копии того же товара из того, что
           // впереди: в колодах, собранных до починки, они ещё лежат, и без
           // этого человек увидит один и тот же товар дважды подряд.
           const deck = inDeck
             ? s.deck
-            : [last.product, ...s.deck.slice(s.index).filter((p) => !sameProduct(p.id, last.product.id))];
+            : [
+                last.product,
+                ...s.deck
+                  .slice(s.index)
+                  .filter((p) => !sameProduct(p.id, last.product.id)),
+              ];
           const index = inDeck ? s.index - 1 : 0;
           const stats = { ...s.stats };
           stats.swipes = Math.max(0, stats.swipes - 1);
@@ -371,10 +468,18 @@ export const useStore = create<State>()(
             deck,
             index,
             history: rest,
-            liked: last.decision === "dislike" ? s.liked : s.liked.filter((p) => p.id !== last.product.id),
-            cart: last.decision === "super" ? s.cart.filter((c) => c.product.id !== last.product.id) : s.cart,
+            liked:
+              last.decision === "dislike"
+                ? s.liked
+                : s.liked.filter((p) => p.id !== last.product.id),
+            cart:
+              last.decision === "super"
+                ? s.cart.filter((c) => c.product.id !== last.product.id)
+                : s.cart,
             seen: s.seen.filter((id) => !sameProduct(id, last.product.id)),
-            rejected: s.rejected.filter((id) => !sameProduct(id, last.product.id)),
+            rejected: s.rejected.filter(
+              (id) => !sameProduct(id, last.product.id),
+            ),
             // Отменённое решение снимается ровно в том весе, в каком было
             // начислено, а не противоположным свайпом.
             taste: unlearn(s.taste, last.product, last.decision),
@@ -382,21 +487,36 @@ export const useStore = create<State>()(
           };
         }),
 
-      unlike: (id) => set((s) => ({ liked: s.liked.filter((p) => p.id !== id), updatedAt: Date.now() })),
+      unlike: (id) =>
+        set((s) => ({
+          liked: s.liked.filter((p) => p.id !== id),
+          updatedAt: Date.now(),
+        })),
 
       like: (product) =>
         set((s) =>
           s.liked.some((p) => p.id === product.id)
             ? s
-            : { liked: [product, ...s.liked], watch: rememberPrice(s.watch, product), updatedAt: Date.now() },
+            : {
+                liked: [product, ...s.liked],
+                watch: rememberPrice(s.watch, product),
+                updatedAt: Date.now(),
+              },
         ),
 
       toggleWish: (product) =>
         set((s) => {
           const has = s.wishlist.some((p) => p.id === product.id);
           return has
-            ? { wishlist: s.wishlist.filter((p) => p.id !== product.id), updatedAt: Date.now() }
-            : { wishlist: [product, ...s.wishlist], watch: rememberPrice(s.watch, product), updatedAt: Date.now() };
+            ? {
+                wishlist: s.wishlist.filter((p) => p.id !== product.id),
+                updatedAt: Date.now(),
+              }
+            : {
+                wishlist: [product, ...s.wishlist],
+                watch: rememberPrice(s.watch, product),
+                updatedAt: Date.now(),
+              };
         }),
 
       setWishTotal: (total) => set({ wishTotal: total }),
@@ -404,7 +524,8 @@ export const useStore = create<State>()(
       setWishlist: (products) =>
         set((s) => {
           const same =
-            s.wishlist.length === products.length && s.wishlist.every((p, i) => p.id === products[i].id);
+            s.wishlist.length === products.length &&
+            s.wishlist.every((p, i) => p.id === products[i].id);
           // Без этой проверки страница, обновляющая копию после каждой загрузки,
           // толкала бы синхронизацию профиля по кругу.
           if (same) return s;
@@ -423,21 +544,36 @@ export const useStore = create<State>()(
       addToCart: (product, sku) =>
         set((s) => {
           if (s.cart.some((c) => c.product.id === product.id)) return s;
-          return { cart: [{ product, qty: 1, sku }, ...s.cart], watch: rememberPrice(s.watch, product), updatedAt: Date.now() };
+          return {
+            cart: [{ product, qty: 1, sku }, ...s.cart],
+            watch: rememberPrice(s.watch, product),
+            updatedAt: Date.now(),
+          };
         }),
 
       setQty: (id, qty) =>
         set((s) => ({
-          cart: s.cart.map((c) => (c.product.id === id ? { ...c, qty: Math.max(1, Math.min(9999, qty)) } : c)),
+          cart: s.cart.map((c) =>
+            c.product.id === id
+              ? { ...c, qty: Math.max(1, Math.min(9999, qty)) }
+              : c,
+          ),
           updatedAt: Date.now(),
         })),
 
-      removeFromCart: (id) => set((s) => ({ cart: s.cart.filter((c) => c.product.id !== id), updatedAt: Date.now() })),
+      removeFromCart: (id) =>
+        set((s) => ({
+          cart: s.cart.filter((c) => c.product.id !== id),
+          updatedAt: Date.now(),
+        })),
 
       clearCart: () => set({ cart: [], updatedAt: Date.now() }),
 
       setRates: (rates, info) =>
-        set((s) => ({ rates: { ...s.rates, ...rates, RUB: 1 }, rateInfo: info })),
+        set((s) => ({
+          rates: { ...s.rates, ...rates, RUB: 1 },
+          rateInfo: info,
+        })),
 
       setFilters: (filters) =>
         set((s) => ({
@@ -476,7 +612,12 @@ export const useStore = create<State>()(
           updatedAt: Date.now(),
           // Ответы про метки — начальные веса, а не прибавка: до теста
           // человек ничего не насвайпал, складывать не с чем.
-          taste: { ...s.taste, picked, budget, tags: { ...s.taste.tags, ...tags } },
+          taste: {
+            ...s.taste,
+            picked,
+            budget,
+            tags: { ...s.taste.tags, ...tags },
+          },
           // Ответы теста должны сразу отразиться на ленте.
           deck: [],
           index: 0,
@@ -489,7 +630,11 @@ export const useStore = create<State>()(
           const product = s.pendingReason;
           if (!product || !reason) return { pendingReason: null };
           const priceRub = toRub(product.price, product.currency, s.rates);
-          return { pendingReason: null, taste: learnReason(s.taste, product, reason, priceRub), updatedAt: Date.now() };
+          return {
+            pendingReason: null,
+            taste: learnReason(s.taste, product, reason, priceRub),
+            updatedAt: Date.now(),
+          };
         }),
 
       setSizes: (sizes) => set({ sizes, updatedAt: Date.now() }),
@@ -506,7 +651,10 @@ export const useStore = create<State>()(
         }),
 
       setPerson: (person) =>
-        set((s) => ({ person: { ...s.person, ...person }, updatedAt: Date.now() })),
+        set((s) => ({
+          person: { ...s.person, ...person },
+          updatedAt: Date.now(),
+        })),
 
       /**
        * Один товар — одна запись: повторный переход обновляет дату, а не
@@ -532,14 +680,22 @@ export const useStore = create<State>()(
           updatedAt: Date.now(),
         })),
 
-      forgetOrder: (id) => set((s) => ({ orders: s.orders.filter((o) => o.id !== id), updatedAt: Date.now() })),
+      forgetOrder: (id) =>
+        set((s) => ({
+          orders: s.orders.filter((o) => o.id !== id),
+          updatedAt: Date.now(),
+        })),
 
       /** Сверяет текущие цены с запомненными и собирает список подешевевших. */
       applyPrices: (current) =>
         set((s) => {
           const drops: PriceDrop[] = [];
           const watch = { ...s.watch };
-          const known = [...s.liked, ...s.wishlist, ...s.cart.map((c) => c.product)];
+          const known = [
+            ...s.liked,
+            ...s.wishlist,
+            ...s.cart.map((c) => c.product),
+          ];
 
           for (const [id, now] of Object.entries(current)) {
             const snap = watch[id];
@@ -601,9 +757,19 @@ export const useStore = create<State>()(
     }),
     {
       name: "swipe1688",
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
-      migrate: () => undefined as unknown as State,
+      migrate: (state) => ({
+        ...(state as State),
+        person: emptyPerson(),
+        sizes: emptySizes(),
+      }),
+      merge: (saved, current) => ({
+        ...current,
+        ...(saved as State),
+        person: emptyPerson(),
+        sizes: emptySizes(),
+      }),
       partialize: (s) => ({
         deck: s.deck,
         index: s.index,
@@ -642,11 +808,18 @@ export const useStore = create<State>()(
 );
 
 /** Цену запоминаем один раз — при первом попадании товара в списки. */
-function rememberPrice(watch: Record<string, PriceWatch>, product: Product): Record<string, PriceWatch> {
+function rememberPrice(
+  watch: Record<string, PriceWatch>,
+  product: Product,
+): Record<string, PriceWatch> {
   if (product.price === undefined || watch[product.id]) return watch;
   return {
     ...watch,
-    [product.id]: { price: product.price, currency: product.currency, since: today() },
+    [product.id]: {
+      price: product.price,
+      currency: product.currency,
+      since: today(),
+    },
   };
 }
 
