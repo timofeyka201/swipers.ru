@@ -1,4 +1,10 @@
 const test = require("node:test");
+const localValues = new Map();
+global.localStorage = {
+  getItem: (key) => localValues.get(key) ?? null,
+  setItem: (key, value) => localValues.set(key, value),
+  removeItem: (key) => localValues.delete(key),
+};
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -353,4 +359,27 @@ test("only one account can claim a nickname and it cannot be changed", async () 
   await store.updateUser({ ...winner, name: "changed", nickname: "changed" });
   assert.equal((await store.getUser(winner.id)).nickname, "unique_user");
   assert.equal(await store.getDoc("nickname:unique_user"), winner.id);
+});
+
+test("legacy game state is discarded without losing service data", () => {
+  const { useStore } = require("../src/lib/store.ts");
+  const current = useStore.getState();
+  const merged = useStore.persist
+    .getOptions()
+    .merge(
+      {
+        stats: { swipes: 100, streak: 20, bestStreak: 30, daySwipes: 20 },
+        liked: [{ id: "kept" }],
+        seen: ["viewed"],
+      },
+      current,
+    );
+  assert.equal("stats" in merged, false);
+  assert.equal(merged.liked[0].id, "kept");
+  assert.deepEqual(merged.seen, ["viewed"]);
+  assert.equal("stats" in current.exportProfile(), false);
+  const { cleanProfile } = require("../src/lib/profile-data.ts");
+  assert.deepEqual(cleanProfile({ stats: { streak: 1 }, liked: [] }), {
+    liked: [],
+  });
 });
