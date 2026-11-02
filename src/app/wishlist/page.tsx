@@ -260,7 +260,7 @@ export default function Wishlist() {
                     <button
                       className="ui-wish-open"
                       onClick={() =>
-                        item.product
+                        item.product && item.source !== "custom"
                           ? setProduct({
                               ...item.product,
                               title: item.title,
