@@ -11,7 +11,8 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "Swiper — свайп-витрина товаров",
     short_name: "Swiper",
-    description: "Свайпайте товары: вправо — нравится, влево — мимо, вверх — в корзину.",
+    description:
+      "Свайпайте товары: вправо — нравится, влево — мимо, вверх — купить у продавца.",
     start_url: "/?source=pwa",
     scope: "/",
     display: "standalone",
@@ -19,19 +20,34 @@ export default function manifest(): MetadataRoute.Manifest {
     // оставляют как запасной вариант для тех, кто это поле не знает.
     display_override: ["standalone", "minimal-ui"],
     orientation: "portrait",
-    background_color: "#eceef2",
+    background_color: "#f3f3f5",
     theme_color: "#ff5b2e",
     lang: "ru",
     categories: ["shopping", "lifestyle"],
     icons: [
-      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      {
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
       // maskable система обрезает под форму своих иконок, поэтому он отдельный.
-      { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      {
+        src: "/icons/icon-maskable-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
     ],
     shortcuts: [
-      { name: "Избранное", short_name: "Избранное", url: "/likes" },
-      { name: "Корзина", short_name: "Корзина", url: "/cart" },
+      { name: "Сохранённое", short_name: "Сохранённое", url: "/likes" },
+      { name: "Куплю", short_name: "Куплю", url: "/cart" },
     ],
   };
 }
