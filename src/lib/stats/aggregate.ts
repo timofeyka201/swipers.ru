@@ -25,7 +25,13 @@ export type Report = {
     devices: number;
     newDevices: number;
     sessions: number;
-    perDay: { day: string; devices: number; sessions: number; swipes: number; shops: number }[];
+    perDay: {
+      day: string;
+      devices: number;
+      sessions: number;
+      swipes: number;
+      shops: number;
+    }[];
   };
   swipes: {
     total: number;
@@ -69,7 +75,12 @@ export type Report = {
     top: { label: string; n: number; found: number }[];
   };
   filters: { sessionsWith: number; groups: Slice[]; sheet: number };
-  social: { shares: number; itemViews: number; giftViews: number; saves: Slice[] };
+  social: {
+    shares: number;
+    itemViews: number;
+    giftViews: number;
+    saves: Slice[];
+  };
   health: {
     feed: { n: number; p50: number; p95: number; errors: number };
     waits: { n: number; p95: number; retried: number };
@@ -86,14 +97,20 @@ export type Report = {
   };
 };
 
-const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0);
-const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : undefined);
+const pct = (part: number, whole: number) =>
+  whole > 0 ? Math.round((part / whole) * 1000) / 10 : 0;
+const num = (v: unknown): number =>
+  typeof v === "number" && Number.isFinite(v) ? v : 0;
+const str = (v: unknown): string | undefined =>
+  typeof v === "string" && v ? v : undefined;
 
 function quantile(values: number[], q: number): number {
   if (!values.length) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  const i = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)));
+  const i = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.round((sorted.length - 1) * q)),
+  );
   return Math.round(sorted[i]);
 }
 
@@ -114,7 +131,10 @@ async function budgetUsed(): Promise<number | null> {
   const auth = process.env.AUTH_FILE?.trim();
   const path = join(auth ? dirname(auth) : ".data", "ae-budget.json");
   try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as { day?: string; used?: number };
+    const parsed = JSON.parse(await readFile(path, "utf8")) as {
+      day?: string;
+      used?: number;
+    };
     const today = new Date().toISOString().slice(0, 10);
     return parsed.day === today ? num(parsed.used) : 0;
   } catch {
@@ -139,7 +159,21 @@ export async function buildReport(days = 7): Promise<Report> {
    */
   const events = await readEvents(Math.max(days, 31));
   const edge = new Date(Date.now() - days * 86_400_000).toISOString();
-  const window = events.filter((e) => e.at >= edge);
+  const latestOrders = new Map<string, StatEvent>();
+  for (const event of events)
+    if (event.type === "order" && event.order)
+      latestOrders.set(
+        String(event.order) + ":" + String(event.product ?? ""),
+        event,
+      );
+  const window = events.filter(
+    (e) =>
+      e.at >= edge &&
+      (e.type !== "order" ||
+        (!!e.order &&
+          latestOrders.get(String(e.order) + ":" + String(e.product ?? "")) ===
+            e)),
+  );
 
   const dayOf = (e: StatEvent) => e.at.slice(0, 10);
 
@@ -152,14 +186,34 @@ export async function buildReport(days = 7): Promise<Report> {
     const device = str(e.device);
     if (!device) continue;
     const day = dayOf(e);
-    if (!firstDay.has(device) || day < (firstDay.get(device) as string)) firstDay.set(device, day);
+    if (!firstDay.has(device) || day < (firstDay.get(device) as string))
+      firstDay.set(device, day);
     if (!deviceDays.has(device)) deviceDays.set(device, new Set());
     deviceDays.get(device)?.add(day);
   }
-  const perDay = new Map<string, { devices: Set<string>; sessions: Set<string>; swipes: number; shops: number }>();
+  const perDay = new Map<
+    string,
+    {
+      devices: Set<string>;
+      sessions: Set<string>;
+      swipes: number;
+      shops: number;
+    }
+  >();
   const dayBag = (day: string) => {
-    if (!perDay.has(day)) perDay.set(day, { devices: new Set(), sessions: new Set(), swipes: 0, shops: 0 });
-    return perDay.get(day) as { devices: Set<string>; sessions: Set<string>; swipes: number; shops: number };
+    if (!perDay.has(day))
+      perDay.set(day, {
+        devices: new Set(),
+        sessions: new Set(),
+        swipes: 0,
+        shops: 0,
+      });
+    return perDay.get(day) as {
+      devices: Set<string>;
+      sessions: Set<string>;
+      swipes: number;
+      shops: number;
+    };
   };
 
   // ——— свайпы
@@ -185,12 +239,23 @@ export async function buildReport(days = 7): Promise<Report> {
   const shops = { total: 0, byScreen: new Map<string, number>() };
   const orders = { n: 0, revenue: 0, commission: 0 };
   const reasons = new Map<string, number>();
-  const search = { queries: 0, empty: 0, loose: 0, exhausted: 0, top: new Map<string, { n: number; found: number }>() };
+  const search = {
+    queries: 0,
+    empty: 0,
+    loose: 0,
+    exhausted: 0,
+    top: new Map<string, { n: number; found: number }>(),
+  };
   const searchSessions = new Set<string>();
   const filterSessions = new Set<string>();
   const filterGroups = new Map<string, number>();
   let sheetFilters = 0;
-  const social = { shares: 0, itemViews: 0, giftViews: 0, saves: new Map<string, number>() };
+  const social = {
+    shares: 0,
+    itemViews: 0,
+    giftViews: 0,
+    saves: new Map<string, number>(),
+  };
   const feedMs: number[] = [];
   let feedErrors = 0;
   const waitMs: number[] = [];
@@ -241,7 +306,8 @@ export async function buildReport(days = 7): Promise<Report> {
           bucket.n += 1;
           if (good) bucket.like += 1;
         }
-        if (session) sessionSwipes.set(session, (sessionSwipes.get(session) ?? 0) + 1);
+        if (session)
+          sessionSwipes.set(session, (sessionSwipes.get(session) ?? 0) + 1);
         if (device) {
           swiped.add(device);
           const bag = deviceSwipes.get(device) ?? { total: 0, like: 0 };
@@ -355,12 +421,16 @@ export async function buildReport(days = 7): Promise<Report> {
   const retention = (gap: number) => {
     let base = 0;
     let back = 0;
-    const horizon = new Date(Date.now() - gap * 86_400_000).toISOString().slice(0, 10);
+    const horizon = new Date(Date.now() - gap * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
     for (const [device, first] of firstDay) {
       // Если с первого дня ещё не прошло `gap` суток, судить рано.
       if (first > horizon) continue;
       base += 1;
-      const target = new Date(new Date(`${first}T00:00:00Z`).getTime() + gap * 86_400_000)
+      const target = new Date(
+        new Date(`${first}T00:00:00Z`).getTime() + gap * 86_400_000,
+      )
         .toISOString()
         .slice(0, 10);
       const seen = deviceDays.get(device);
@@ -381,18 +451,24 @@ export async function buildReport(days = 7): Promise<Report> {
       const bag = deviceSwipes.get(device);
       if (!bag) continue;
       total += Math.min(50, bag.total);
-      liked += Math.round((bag.like / Math.max(1, bag.total)) * Math.min(50, bag.total));
+      liked += Math.round(
+        (bag.like / Math.max(1, bag.total)) * Math.min(50, bag.total),
+      );
     }
     return { devices: group.size, likeRate: pct(liked, total) };
   };
 
   const info = catalogInfo();
   const products = catalogProducts();
-  const images = products.filter((p) => p.images?.[0]?.startsWith("/media/")).length;
+  const images = products.filter((p) =>
+    p.images?.[0]?.startsWith("/media/"),
+  ).length;
   const ungrouped = products.filter((p) => !p.group).length;
   const groups = new Set(products.map((p) => p.group).filter(Boolean)).size;
   const ageHours = info.generatedAt
-    ? Math.round(((Date.now() - new Date(info.generatedAt).getTime()) / 3_600_000) * 10) / 10
+    ? Math.round(
+        ((Date.now() - new Date(info.generatedAt).getTime()) / 3_600_000) * 10,
+      ) / 10
     : null;
 
   const funnel = [
@@ -409,7 +485,11 @@ export async function buildReport(days = 7): Promise<Report> {
       .filter(([, bag]) => bag.n >= min)
       .sort((a, b) => b[1].n - a[1].n)
       .slice(0, 12)
-      .map(([label, bag]) => ({ label, n: bag.n, likeRate: likeRateOf({ like: bag.like, total: bag.n }) }));
+      .map(([label, bag]) => ({
+        label,
+        n: bag.n,
+        likeRate: likeRateOf({ like: bag.like, total: bag.n }),
+      }));
 
   const slices = (map: Map<string, number>, whole: number) =>
     [...map.entries()]
@@ -443,9 +523,15 @@ export async function buildReport(days = 7): Promise<Report> {
       cart,
       dislike,
       likeRate: pct(good, swipes),
-      perSession: sessions.size ? Math.round((swipes / sessions.size) * 10) / 10 : 0,
+      perSession: sessions.size
+        ? Math.round((swipes / sessions.size) * 10) / 10
+        : 0,
       undoPer100: swipes ? Math.round((undo / swipes) * 1000) / 10 : 0,
-      byDepth: depth.map((d) => ({ range: d.range, n: d.n, likeRate: pct(d.like, d.n) })),
+      byDepth: depth.map((d) => ({
+        range: d.range,
+        n: d.n,
+        likeRate: pct(d.like, d.n),
+      })),
       sessionDepth: {
         median: quantile(depths, 0.5),
         p90: quantile(depths, 0.9),
@@ -455,13 +541,17 @@ export async function buildReport(days = 7): Promise<Report> {
     funnel,
     money: {
       shops: shops.total,
-      shopsPer100Swipes: swipes ? Math.round((shops.total / swipes) * 1000) / 10 : 0,
+      shopsPer100Swipes: swipes
+        ? Math.round((shops.total / swipes) * 1000) / 10
+        : 0,
       byScreen: slices(shops.byScreen, shops.total),
       orders: orders.n,
       revenue: Math.round(orders.revenue),
       commission: Math.round(orders.commission),
       conversion: pct(orders.n, shops.total),
-      per1000Swipes: swipes ? Math.round((orders.commission / swipes) * 1000) : 0,
+      per1000Swipes: swipes
+        ? Math.round((orders.commission / swipes) * 1000)
+        : 0,
     },
     retention: { d1: d1.share, d7: d7.share, d30: d30.share, base: d1.base },
     quality: {
@@ -472,7 +562,10 @@ export async function buildReport(days = 7): Promise<Report> {
       topTags: sorted(byTag, 5),
       quizWith: firstFifty(quizDone),
       quizWithout: firstFifty(quizSkipped),
-      reasons: slices(reasons, [...reasons.values()].reduce((a, b) => a + b, 0)),
+      reasons: slices(
+        reasons,
+        [...reasons.values()].reduce((a, b) => a + b, 0),
+      ),
     },
     search: {
       queries: search.queries,
@@ -487,18 +580,33 @@ export async function buildReport(days = 7): Promise<Report> {
     },
     filters: {
       sessionsWith: pct(filterSessions.size, sessions.size),
-      groups: slices(filterGroups, [...filterGroups.values()].reduce((a, b) => a + b, 0)),
+      groups: slices(
+        filterGroups,
+        [...filterGroups.values()].reduce((a, b) => a + b, 0),
+      ),
       sheet: sheetFilters,
     },
     social: {
       shares: social.shares,
       itemViews: social.itemViews,
       giftViews: social.giftViews,
-      saves: slices(social.saves, [...social.saves.values()].reduce((a, b) => a + b, 0)),
+      saves: slices(
+        social.saves,
+        [...social.saves.values()].reduce((a, b) => a + b, 0),
+      ),
     },
     health: {
-      feed: { n: feedMs.length, p50: quantile(feedMs, 0.5), p95: quantile(feedMs, 0.95), errors: feedErrors },
-      waits: { n: waitMs.length, p95: quantile(waitMs, 0.95), retried: waitRetried },
+      feed: {
+        n: feedMs.length,
+        p50: quantile(feedMs, 0.5),
+        p95: quantile(feedMs, 0.95),
+        errors: feedErrors,
+      },
+      waits: {
+        n: waitMs.length,
+        p95: quantile(waitMs, 0.95),
+        retried: waitRetried,
+      },
       catalog: {
         total: info.total,
         generatedAt: info.generatedAt,
