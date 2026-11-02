@@ -16,10 +16,14 @@ export const dynamic = "force-dynamic";
  * товар. Потерянная комиссия — неприятность, тупик вместо магазина — потеря
  * покупателя.
  */
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   // Откуда ушли: из ленты, из избранного, из корзины, со страницы товара.
-  const from = new URL(req.url).searchParams.get("from")?.slice(0, 16) || "unknown";
+  const from =
+    new URL(req.url).searchParams.get("from")?.slice(0, 16) || "unknown";
 
   // Идентификаторы с суффиксом круга («-r1») указывают на тот же товар.
   const base = id.replace(/-r\d+$/, "");
@@ -34,10 +38,16 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
    * переход так не протащить.
    */
   const itemId = /^ae-(\d{6,20})$/.exec(base)?.[1];
-  const url = product?.url ?? (itemId ? `https://aliexpress.ru/item/${itemId}.html` : undefined);
+  const url =
+    product?.url ??
+    (itemId ? `https://aliexpress.ru/item/${itemId}.html` : undefined);
   if (!url) return new NextResponse("Нет такого товара", { status: 404 });
 
-  const creative = await affiliateLink(base, url, product?.title ?? `Товар ${itemId}`);
+  const creative = await affiliateLink(
+    base,
+    url,
+    product?.title ?? `Товар ${itemId}`,
+  );
   await noteClick(base, creative ? "affiliate" : "direct");
   // Переход — самая денежная метрика витрины, поэтому он попадает и в журнал
   // событий: там он лежит рядом со свайпами и считается вместе с ними.

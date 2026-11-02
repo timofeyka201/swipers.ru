@@ -12,8 +12,18 @@ const SESSION_DAYS = 30;
  * приложения, — а не на режим сборки.
  */
 function secureCookie(): boolean {
-  const url = process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (url) return /^https:/i.test(url);
+  const url =
+    process.env.APP_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (url) {
+    const parsed = new URL(url);
+    if (
+      process.env.NODE_ENV === "production" &&
+      parsed.protocol !== "https:" &&
+      !["localhost", "127.0.0.1"].includes(parsed.hostname)
+    )
+      throw new Error("HTTPS APP_URL required");
+    return parsed.protocol === "https:";
+  }
   return process.env.NODE_ENV === "production";
 }
 
@@ -77,7 +87,10 @@ export async function currentUser(): Promise<UserRecord | null> {
 
   // Смена пароля обесценивает все входы, сделанные до неё. Сессии, выданные до
   // появления этого поля, считаем действительными: issuedAt у них нет.
-  if (user.passwordChangedAt && (session.issuedAt ?? Infinity) < user.passwordChangedAt) {
+  if (
+    user.passwordChangedAt &&
+    (session.issuedAt ?? 0) < user.passwordChangedAt
+  ) {
     await store.deleteSession(token);
     return null;
   }
@@ -105,7 +118,8 @@ export function tooManyAttempts(key: string): boolean {
 export function noteFailure(key: string): void {
   const now = Date.now();
   const entry = attempts.get(key);
-  if (!entry || entry.until < now) attempts.set(key, { count: 1, until: now + WINDOW_MS });
+  if (!entry || entry.until < now)
+    attempts.set(key, { count: 1, until: now + WINDOW_MS });
   else entry.count += 1;
   // Карта не должна расти бесконечно на долгоживущем инстансе.
   if (attempts.size > 5000) {
@@ -118,6 +132,6 @@ export function clearFailures(key: string): void {
 }
 
 export function clientKey(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  return (forwarded?.split(",")[0] ?? "local").trim();
+  const forwarded = req.headers.get("x-real-ip");
+  return (forwarded?.split(",")[0] ?? "local").trim().slice(0, 64);
 }

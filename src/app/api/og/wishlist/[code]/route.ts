@@ -1,3 +1,4 @@
+import { safeFetch } from "@/lib/safe-fetch";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
@@ -50,19 +51,18 @@ async function bytes(src?: string): Promise<Buffer | null> {
 
   if (!/^https?:\/\//.test(src)) return null;
   try {
-    const res = await fetch(src, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
-      headers: { "User-Agent": "Mozilla/5.0", Accept: "image/*" },
-    });
-    if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
+    const res = await safeFetch(src, 4 * 1024 * 1024, FETCH_TIMEOUT);
+    if (!res.type.startsWith("image/")) return null;
+    return res.body;
   } catch {
     return null;
   }
 }
 
 /** Сетка под число плиток: одна во всё полотно, две половинами, дальше 2×2. */
-function grid(n: number): { left: number; top: number; w: number; h: number }[] {
+function grid(
+  n: number,
+): { left: number; top: number; w: number; h: number }[] {
   if (n <= 1) return [{ left: 0, top: 0, w: WIDTH, h: HEIGHT }];
   if (n === 2) {
     return [
@@ -81,15 +81,30 @@ function grid(n: number): { left: number; top: number; w: number; h: number }[] 
 }
 
 const blank = () =>
-  sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: BACKGROUND } }).jpeg({ quality: 82 }).toBuffer();
+  sharp({
+    create: {
+      width: WIDTH,
+      height: HEIGHT,
+      channels: 3,
+      background: BACKGROUND,
+    },
+  })
+    .jpeg({ quality: 82 })
+    .toBuffer();
 
-export async function GET(_req: Request, { params }: { params: Promise<{ code: string }> }) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ code: string }> },
+) {
   const { code: raw } = await params;
   const code = normalizeCode(raw);
 
   const send = (body: Buffer, maxAge: number) =>
     new NextResponse(new Uint8Array(body), {
-      headers: { "Content-Type": "image/jpeg", "Cache-Control": `public, max-age=${maxAge}` },
+      headers: {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": `public, max-age=${maxAge}`,
+      },
     });
 
   try {
@@ -97,28 +112,45 @@ export async function GET(_req: Request, { params }: { params: Promise<{ code: s
     // Закрытый список не показывает даже своих картинок.
     if (!list || !list.shared) return send(await blank(), 300);
 
-    const sources = list.items.map((i) => i.image).filter(Boolean).slice(0, MAX_TILES) as string[];
-    const loaded = (await Promise.all(sources.map(bytes))).filter((b): b is Buffer => !!b);
+    const sources = list.items
+      .map((i) => i.image)
+      .filter(Boolean)
+      .slice(0, MAX_TILES) as string[];
+    const loaded = (await Promise.all(sources.map(bytes))).filter(
+      (b): b is Buffer => !!b,
+    );
     if (!loaded.length) return send(await blank(), 600);
 
     const cells = grid(loaded.length);
     const tiles = await Promise.all(
       loaded.slice(0, cells.length).map(async (buf, i) => ({
         input: await sharp(buf)
-          .resize(Math.round(cells[i].w), Math.round(cells[i].h), { fit: "cover" })
+          .resize(Math.round(cells[i].w), Math.round(cells[i].h), {
+            fit: "cover",
+          })
           .toBuffer(),
         left: Math.round(cells[i].left),
         top: Math.round(cells[i].top),
       })),
     );
 
-    const body = await sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: BACKGROUND } })
+    const body = await sharp({
+      create: {
+        width: WIDTH,
+        height: HEIGHT,
+        channels: 3,
+        background: BACKGROUND,
+      },
+    })
       .composite(tiles)
       .jpeg({ quality: 82 })
       .toBuffer();
     return send(body, 1800);
   } catch (e) {
-    console.error("Превью вишлиста не собрано:", e instanceof Error ? e.message : e);
+    console.error(
+      "Превью вишлиста не собрано:",
+      e instanceof Error ? e.message : e,
+    );
     return send(await blank(), 300);
   }
 }

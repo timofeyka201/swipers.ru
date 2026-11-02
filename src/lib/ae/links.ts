@@ -1,4 +1,11 @@
-import { mkdir, readFile, rename, writeFile, appendFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  mkdir,
+  readFile,
+  rename,
+  writeFile,
+  appendFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AeError, aeConfigured, aeFetch, aeUserId } from "./client";
 
@@ -33,26 +40,42 @@ const inFlight = new Map<string, Promise<Creative | null>>();
 async function readCache(): Promise<Record<string, Creative>> {
   if (memo) return memo;
   try {
-    memo = JSON.parse(await readFile(CACHE(), "utf8")) as Record<string, Creative>;
+    memo = JSON.parse(await readFile(CACHE(), "utf8")) as Record<
+      string,
+      Creative
+    >;
   } catch {
     memo = {};
   }
   return memo;
 }
 
-async function saveCache(): Promise<void> {
+let saves: Promise<void> = Promise.resolve();
+function saveCache(): Promise<void> {
+  const next = saves.then(writeCache);
+  saves = next.catch(() => undefined);
+  return next;
+}
+async function writeCache(): Promise<void> {
   if (!memo) return;
   const path = CACHE();
   await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
+  const tmp = `${path}.${randomUUID()}.tmp`;
   await writeFile(tmp, JSON.stringify(memo));
   await rename(tmp, path);
 }
 
 /** Запись о переходе. Пишем строкой в файл: разбирать её будем потом, а
  *  потерять переход из-за недоступной базы нельзя. */
-export async function noteClick(productId: string, outcome: "affiliate" | "direct"): Promise<void> {
-  const line = JSON.stringify({ at: new Date().toISOString(), productId, outcome });
+export async function noteClick(
+  productId: string,
+  outcome: "affiliate" | "direct",
+): Promise<void> {
+  const line = JSON.stringify({
+    at: new Date().toISOString(),
+    productId,
+    outcome,
+  });
   try {
     const path = CLICKS();
     await mkdir(dirname(path), { recursive: true });
@@ -77,13 +100,23 @@ function findLink(body: unknown): { target?: string; erid?: string } {
     ["creatives", "0", "attributes", "targetLink"],
   ];
   const at = (path: string[]): unknown =>
-    path.reduce<unknown>((value, key) => (value as Record<string, unknown>)?.[key], body);
+    path.reduce<unknown>(
+      (value, key) => (value as Record<string, unknown>)?.[key],
+      body,
+    );
 
   const target = paths.map(at).find((v) => typeof v === "string" && v);
-  const erid = [["eridToken"], ["data", "eridToken"], ["data", "attributes", "eridToken"]]
+  const erid = [
+    ["eridToken"],
+    ["data", "eridToken"],
+    ["data", "attributes", "eridToken"],
+  ]
     .map(at)
     .find((v) => typeof v === "string" && v);
-  return { target: target as string | undefined, erid: erid as string | undefined };
+  return {
+    target: target as string | undefined,
+    erid: erid as string | undefined,
+  };
 }
 
 let placementMemo: string | null = null;
@@ -104,12 +137,17 @@ async function placement(userId: string): Promise<string | null> {
     }>(`/api/v1/users/${userId}/placements/active`);
     const first = (res.placements ?? res.data ?? [])[0]?.id;
     if (first === undefined) {
-      console.error("У партнёра нет активных площадок — партнёрские ссылки создавать не на что.");
+      console.error(
+        "У партнёра нет активных площадок — партнёрские ссылки создавать не на что.",
+      );
       return null;
     }
     return (placementMemo = String(first));
   } catch (e) {
-    console.error("Список площадок не получен:", e instanceof Error ? e.message : e);
+    console.error(
+      "Список площадок не получен:",
+      e instanceof Error ? e.message : e,
+    );
     return null;
   }
 }
@@ -119,7 +157,11 @@ async function placement(userId: string): Promise<string | null> {
  * или отказала: в этом случае человека отправляем на обычную ссылку товара —
  * потерять комиссию неприятно, не пустить человека в магазин недопустимо.
  */
-export async function affiliateLink(productId: string, url: string, title: string): Promise<Creative | null> {
+export async function affiliateLink(
+  productId: string,
+  url: string,
+  title: string,
+): Promise<Creative | null> {
   const cache = await readCache();
   const hit = cache[productId];
   if (hit) return hit;
@@ -151,7 +193,10 @@ export async function affiliateLink(productId: string, url: string, title: strin
         // Креатив, похоже, создан, но ссылку мы в ответе не нашли. Показываем
         // ответ целиком: иначе каждый переход будет создавать креатив заново,
         // а человек всё равно уйдёт по обычной ссылке.
-        console.error("В ответе площадки нет targetLink:", JSON.stringify(res).slice(0, 600));
+        console.error(
+          "В ответе площадки нет targetLink:",
+          JSON.stringify(res).slice(0, 600),
+        );
         return null;
       }
       const creative: Creative = { target, erid, createdAt: Date.now() };
@@ -159,10 +204,14 @@ export async function affiliateLink(productId: string, url: string, title: strin
       await saveCache();
       return creative;
     } catch (e) {
-      console.error("Партнёрская ссылка не создана:", e instanceof Error ? e.message : e);
+      console.error(
+        "Партнёрская ссылка не создана:",
+        e instanceof Error ? e.message : e,
+      );
       // Текст отказа площадки — единственное, по чему видно, какое поле ей не
       // понравилось.
-      if (e instanceof AeError && e.body) console.error("  ответ площадки:", e.body);
+      if (e instanceof AeError && e.body)
+        console.error("  ответ площадки:", e.body);
       return null;
     } finally {
       inFlight.delete(productId);

@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { limit } from "@/lib/auth/otp";
+import { randomUUID, createHash } from "node:crypto";
 import { mkdir, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
@@ -26,7 +27,8 @@ function tooMany(key: string): boolean {
   const entry = recent.get(key);
   if (!entry || entry.until < now) {
     recent.set(key, { count: 1, until: now + WINDOW });
-    if (recent.size > 5000) for (const [k, v] of recent) if (v.until < now) recent.delete(k);
+    if (recent.size > 5000)
+      for (const [k, v] of recent) if (v.until < now) recent.delete(k);
     return false;
   }
   entry.count += 1;
@@ -45,21 +47,53 @@ function tooMany(key: string): boolean {
 export async function POST(req: Request) {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: "Нужен вход" }, { status: 401 });
-  if (tooMany(`${user.id}:${clientKey(req)}`)) {
-    return NextResponse.json({ error: "Слишком много загрузок подряд. Попробуйте позже" }, { status: 429 });
+  if (!(await limit("photo:" + user.id, 40, 3600000))) {
+    return NextResponse.json(
+      { error: "Слишком много загрузок подряд. Попробуйте позже" },
+      { status: 429 },
+    );
   }
 
+  if (Number(req.headers.get("content-length")) > MAX_BYTES + 65536)
+    return NextResponse.json(
+      { error: "Фотография тяжелее 12 МБ" },
+      { status: 413 },
+    );
   let file: File | null = null;
   try {
-    const form = await req.formData();
+    const reader = req.body?.getReader();
+    if (!reader) throw new Error("Missing body");
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > MAX_BYTES + 65536) throw new Error("Too large");
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
+    }
+    const form = await new Response(new Uint8Array(Buffer.concat(chunks)), {
+      headers: req.headers,
+    }).formData();
     const value = form.get("photo");
     if (value instanceof File) file = value;
   } catch {
-    return NextResponse.json({ error: "Не удалось прочитать файл" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Не удалось прочитать файл" },
+      { status: 400 },
+    );
   }
-  if (!file) return NextResponse.json({ error: "Файл не выбран" }, { status: 400 });
+  if (!file)
+    return NextResponse.json({ error: "Файл не выбран" }, { status: 400 });
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Фотография тяжелее 12 МБ — выберите другую" }, { status: 413 });
+    return NextResponse.json(
+      { error: "Фотография тяжелее 12 МБ — выберите другую" },
+      { status: 413 },
+    );
   }
 
   const input = Buffer.from(await file.arrayBuffer());
@@ -73,7 +107,10 @@ export async function POST(req: Request) {
       .webp({ quality: QUALITY })
       .toBuffer();
   } catch {
-    return NextResponse.json({ error: "Это не похоже на фотографию" }, { status: 415 });
+    return NextResponse.json(
+      { error: "Это не похоже на фотографию" },
+      { status: 415 },
+    );
   }
 
   const name = `${createHash("sha256").update(output).digest("hex").slice(0, 32)}.webp`;
@@ -81,12 +118,15 @@ export async function POST(req: Request) {
   try {
     await mkdir(dir, { recursive: true });
     // Через временный файл: раздача не должна встретить половину картинки.
-    const tmp = join(dir, `${name}.tmp`);
+    const tmp = join(dir, `${name}.${randomUUID()}.tmp`);
     await writeFile(tmp, output);
     await rename(tmp, join(dir, name));
   } catch (e) {
     console.error("Фотография не сохранена:", e);
-    return NextResponse.json({ error: "Не удалось сохранить фотографию" }, { status: 503 });
+    return NextResponse.json(
+      { error: "Не удалось сохранить фотографию" },
+      { status: 503 },
+    );
   }
 
   return NextResponse.json({ url: uploadUrl(name), bytes: output.length });

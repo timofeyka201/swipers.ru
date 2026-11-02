@@ -1,16 +1,36 @@
 "use client";
 
-import { motion, useDragControls, useMotionValue, useTransform, type PanInfo } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import {
+  motion,
+  useDragControls,
+  useMotionValue,
+  useTransform,
+  type PanInfo,
+} from "framer-motion";
+import { useMemo, useEffect, useRef, useState } from "react";
 import Img, { prefetchImage } from "./Img";
-import { IconCart, IconChevron, IconFlame, IconHeart, IconStar, IconUndo, IconX } from "./Icons";
+import {
+  IconCart,
+  IconChevron,
+  IconFlame,
+  IconHeart,
+  IconStar,
+  IconUndo,
+  IconX,
+} from "./Icons";
 import { categoryLabel } from "@/lib/categories";
 import type { Product } from "@/lib/types";
 import type { Decision } from "@/lib/store";
 
 /** Как уходит карточка: по решению человека или потому что ленту пересобрали. */
 export type ExitWay = Decision | "reset";
-import { compact, formatNative, formatRub, needsConversion, plural } from "@/lib/money";
+import {
+  compact,
+  formatNative,
+  formatRub,
+  needsConversion,
+  plural,
+} from "@/lib/money";
 
 /**
  * Порог свайпа. Был 110 пикселей при 520 скорости — на телефоне, который
@@ -118,7 +138,16 @@ function PhotoButton({
   );
 }
 
-export default function SwipeCard({ product, rates, depth, showHint, onDecide, onOpen, onUndo, canUndo }: Props) {
+export default function SwipeCard({
+  product,
+  rates,
+  depth,
+  showHint,
+  onDecide,
+  onOpen,
+  onUndo,
+  canUndo,
+}: Props) {
   const x = useMotionValue(0);
   const y = useMotionValue(0);
   const rotate = useTransform(x, [-260, 0, 260], [-14, 0, 14]);
@@ -133,7 +162,10 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
   );
 
   const [imgIndex, setImgIndex] = useState(0);
-  const images = product.images.length ? product.images : [""];
+  const images = useMemo(
+    () => (product.images.length ? product.images : [""]),
+    [product.images],
+  );
   const interactive = depth === 0;
 
   /**
@@ -161,14 +193,18 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
 
   function handleDragEnd(_: unknown, info: PanInfo) {
     const { offset, velocity } = info;
-    if (offset.y < -SUPER_DISTANCE && Math.abs(offset.x) < 80) return onDecide("super");
-    if (offset.x > SWIPE_DISTANCE || velocity.x > SWIPE_VELOCITY) return onDecide("like");
-    if (offset.x < -SWIPE_DISTANCE || velocity.x < -SWIPE_VELOCITY) return onDecide("dislike");
+    if (offset.y < -SUPER_DISTANCE && Math.abs(offset.x) < 80)
+      return onDecide("super");
+    if (offset.x > SWIPE_DISTANCE || velocity.x > SWIPE_VELOCITY)
+      return onDecide("like");
+    if (offset.x < -SWIPE_DISTANCE || velocity.x < -SWIPE_VELOCITY)
+      return onDecide("dislike");
     x.set(0);
     y.set(0);
   }
 
-  const prevImage = () => setImgIndex((i) => (i - 1 + images.length) % images.length);
+  const prevImage = () =>
+    setImgIndex((i) => (i - 1 + images.length) % images.length);
   const nextImage = () => setImgIndex((i) => (i + 1) % images.length);
 
   /**
@@ -181,7 +217,8 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
   useEffect(() => {
     if (!interactive || images.length < 2) return;
     prefetchImage(images[(imgIndex + 1) % images.length]);
-    if (images.length > 2) prefetchImage(images[(imgIndex - 1 + images.length) % images.length]);
+    if (images.length > 2)
+      prefetchImage(images[(imgIndex - 1 + images.length) % images.length]);
   }, [interactive, imgIndex, images]);
 
   /**
@@ -214,9 +251,12 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
     else onOpen();
   }
 
-  const hot = (product.soldCount ?? 0) > 5000 || (product.reviewsCount ?? 0) > 2000;
+  const hot =
+    (product.soldCount ?? 0) > 5000 || (product.reviewsCount ?? 0) > 2000;
   const discount =
-    product.priceMax !== undefined && product.price !== undefined && product.priceMax > product.price
+    product.priceMax !== undefined &&
+    product.price !== undefined &&
+    product.priceMax > product.price
       ? Math.round((1 - product.price / product.priceMax) * 100)
       : 0;
 
@@ -234,9 +274,19 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
   return (
     <motion.div
       className="absolute inset-0 flex touch-none select-none items-center justify-center"
-      style={interactive ? { x, y, rotate, zIndex: 10 } : { zIndex: 10 - depth }}
-      initial={{ scale: 1 - depth * 0.04, y: depth * 14, opacity: depth > 2 ? 0 : 1 }}
-      animate={{ scale: 1 - depth * 0.04, y: depth === 0 ? 0 : depth * 14, opacity: depth > 2 ? 0 : 1 }}
+      style={
+        interactive ? { x, y, rotate, zIndex: 10 } : { zIndex: 10 - depth }
+      }
+      initial={{
+        scale: 1 - depth * 0.04,
+        y: depth * 14,
+        opacity: depth > 2 ? 0 : 1,
+      }}
+      animate={{
+        scale: 1 - depth * 0.04,
+        y: depth === 0 ? 0 : depth * 14,
+        opacity: depth > 2 ? 0 : 1,
+      }}
       variants={{
         exit: (custom: ExitWay) =>
           // «reset» — карточка уходит не по решению человека, а потому что
@@ -287,10 +337,16 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
             className="absolute inset-0 h-full w-full"
             fallbackLabel={product.title.slice(0, 60)}
           />
-          <motion.div className="pointer-events-none absolute inset-0 bg-black" style={{ opacity: dim }} />
+          <motion.div
+            className="pointer-events-none absolute inset-0 bg-black"
+            style={{ opacity: dim }}
+          />
 
           {images.length > 1 && (
-            <div className="absolute inset-x-4 top-3 z-20 flex gap-1" aria-hidden>
+            <div
+              className="absolute inset-x-4 top-3 z-20 flex gap-1"
+              aria-hidden
+            >
               {images.slice(0, 10).map((_, i) => (
                 <span
                   key={i}
@@ -305,8 +361,18 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
           {interactive && images.length > 1 && (
             <>
               {[
-                { side: "left", label: "Предыдущее фото", act: prevImage, rotate: "rotate-180" },
-                { side: "right", label: "Следующее фото", act: nextImage, rotate: "" },
+                {
+                  side: "left",
+                  label: "Предыдущее фото",
+                  act: prevImage,
+                  rotate: "rotate-180",
+                },
+                {
+                  side: "right",
+                  label: "Следующее фото",
+                  act: nextImage,
+                  rotate: "",
+                },
               ].map(({ side, label, act, rotate }) => (
                 <button
                   key={side}
@@ -338,11 +404,17 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
             </>
           )}
 
-          <Stamp style={{ opacity: likeOpacity }} className="on-accent left-4 top-28 -rotate-[14deg] bg-[var(--color-like)]">
+          <Stamp
+            style={{ opacity: likeOpacity }}
+            className="on-accent left-4 top-28 -rotate-[14deg] bg-[var(--color-like)]"
+          >
             <IconHeart className="h-6 w-6" />
             ХОЧУ
           </Stamp>
-          <Stamp style={{ opacity: nopeOpacity }} className="right-4 top-28 rotate-[14deg] bg-[var(--color-nope)] text-white">
+          <Stamp
+            style={{ opacity: nopeOpacity }}
+            className="right-4 top-28 rotate-[14deg] bg-[var(--color-nope)] text-white"
+          >
             <IconX className="h-6 w-6" />
             МИМО
           </Stamp>
@@ -350,8 +422,7 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
             style={{ opacity: superOpacity }}
             className="on-accent left-1/2 top-36 -translate-x-1/2 -rotate-[6deg] bg-[var(--color-super)]"
           >
-            <IconCart className="h-6 w-6" />
-            В КОРЗИНУ
+            <IconCart className="h-6 w-6" />В КОРЗИНУ
           </Stamp>
 
           {/* Два действия, которые свайпом не делаются: вернуть предыдущую
@@ -359,10 +430,18 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
               под карточкой и отнимали у неё полторы сотни пикселей высоты. */}
           {interactive && (
             <div className="absolute left-3 top-8 z-30 flex items-center gap-2">
-              <PhotoButton label="Вернуть карточку" onPress={onUndo} disabled={!canUndo}>
+              <PhotoButton
+                label="Вернуть карточку"
+                onPress={onUndo}
+                disabled={!canUndo}
+              >
                 <IconUndo className="h-5 w-5" />
               </PhotoButton>
-              <PhotoButton label="Сразу в корзину" onPress={() => onDecide("super")} accent>
+              <PhotoButton
+                label="Сразу в корзину"
+                onPress={() => onDecide("super")}
+                accent
+              >
                 <IconCart className="h-5 w-5" />
               </PhotoButton>
             </div>
@@ -390,11 +469,12 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
               {formatRub(product.price, product.currency, rates)}
             </span>
             <div className="flex shrink-0 items-center gap-1.5">
-              {product.priceMax !== undefined && product.priceMax > (product.price ?? 0) && (
-                <span className="tnum text-[13px] text-[var(--color-muted)] line-through">
-                  {formatRub(product.priceMax, product.currency, rates)}
-                </span>
-              )}
+              {product.priceMax !== undefined &&
+                product.priceMax > (product.price ?? 0) && (
+                  <span className="tnum text-[13px] text-[var(--color-muted)] line-through">
+                    {formatRub(product.priceMax, product.currency, rates)}
+                  </span>
+                )}
               {product.rating !== undefined && (
                 <span className="flex items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2.5 py-1 text-[13px] font-bold">
                   <IconStar className="h-3.5 w-3.5 text-[var(--color-brand)]" />
@@ -408,10 +488,14 @@ export default function SwipeCard({ product, rates, depth, showHint, onDecide, o
               повисает между строками. Высота постоянная намеренно — иначе
               граница фотографии и подписи прыгает от карточки к карточке. */}
           <div className="flex min-h-[60px] flex-col gap-1">
-            <h2 className="line-clamp-2 text-[16px] font-semibold leading-[1.3]">{product.title}</h2>
+            <h2 className="line-clamp-2 text-[16px] font-semibold leading-[1.3]">
+              {product.title}
+            </h2>
             <p className="truncate text-[13px] font-medium text-[var(--color-muted)]">
-              {meta || (product.category ? categoryLabel(product.category) : "")}
-              {needsConversion(product.currency) && ` · ${formatNative(product.price, product.currency)}`}
+              {meta ||
+                (product.category ? categoryLabel(product.category) : "")}
+              {needsConversion(product.currency) &&
+                ` · ${formatNative(product.price, product.currency)}`}
             </p>
           </div>
         </div>

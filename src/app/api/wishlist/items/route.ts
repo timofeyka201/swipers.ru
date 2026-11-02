@@ -1,7 +1,20 @@
+import { readJson } from "@/lib/read-json";
 import { NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth/session";
-import { buildItem, myWishlist, ownerView, roomFor, saveWishlist } from "@/lib/wish/server";
-import { clip, MAX_ITEMS, MAX_NOTE, MAX_TITLE, safeUrl } from "@/lib/wish/types";
+import {
+  buildItem,
+  myWishlist,
+  ownerView,
+  roomFor,
+  saveWishlist,
+} from "@/lib/wish/server";
+import {
+  clip,
+  MAX_ITEMS,
+  MAX_NOTE,
+  MAX_TITLE,
+  safeUrl,
+} from "@/lib/wish/types";
 import type { Product } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -11,7 +24,14 @@ const noStore = { "Cache-Control": "no-store" };
 
 type Body = {
   /** Своя карточка: ссылка, фото, название, цена. */
-  item?: { title?: string; price?: number; currency?: string; url?: string; image?: string; note?: string };
+  item?: {
+    title?: string;
+    price?: number;
+    currency?: string;
+    url?: string;
+    image?: string;
+    note?: string;
+  };
   /** Карточки из ленты — одна или пачкой при переносе старого вишлиста. */
   products?: Product[];
 };
@@ -27,7 +47,7 @@ export async function POST(req: Request) {
 
   let body: Body;
   try {
-    body = (await req.json()) as Body;
+    body = (await readJson(req, 600000)) as Body;
   } catch {
     return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
   }
@@ -35,7 +55,10 @@ export async function POST(req: Request) {
   const list = await myWishlist(user);
   let added = 0;
 
-  for (const product of (body.products ?? []).slice(0, MAX_ITEMS)) {
+  for (const product of (Array.isArray(body?.products)
+    ? body.products
+    : []
+  ).slice(0, MAX_ITEMS)) {
     if (!product?.id || typeof product.title !== "string") continue;
     if (list.items.some((i) => i.product?.id === product.id)) continue;
     if (!roomFor(list)) break;
@@ -45,8 +68,8 @@ export async function POST(req: Request) {
         title: product.title,
         price: product.price,
         currency: product.currency,
-        url: product.url,
-        image: product.images?.[0],
+        url: safeUrl(product.url),
+        image: safeUrl(product.images?.[0]),
         product,
       }),
     );
@@ -55,15 +78,23 @@ export async function POST(req: Request) {
 
   if (body.item) {
     const title = clip(body.item.title ?? "", MAX_TITLE);
-    if (!title) return NextResponse.json({ error: "Без названия карточку не сохранить" }, { status: 400 });
+    if (!title)
+      return NextResponse.json(
+        { error: "Без названия карточку не сохранить" },
+        { status: 400 },
+      );
     if (!roomFor(list)) {
-      return NextResponse.json({ error: `В списке уже ${MAX_ITEMS} желаний — больше не поместится` }, { status: 409 });
+      return NextResponse.json(
+        { error: `В списке уже ${MAX_ITEMS} желаний — больше не поместится` },
+        { status: 409 },
+      );
     }
     list.items.unshift(
       buildItem({
         source: "custom",
         title,
-        price: typeof body.item.price === "number" ? body.item.price : undefined,
+        price:
+          typeof body.item.price === "number" ? body.item.price : undefined,
         currency: body.item.currency || "RUB",
         url: safeUrl(body.item.url),
         image: safeUrl(body.item.image),
@@ -77,9 +108,15 @@ export async function POST(req: Request) {
     try {
       await saveWishlist(list);
     } catch {
-      return NextResponse.json({ error: "Список получился слишком большим" }, { status: 413 });
+      return NextResponse.json(
+        { error: "Список получился слишком большим" },
+        { status: 413 },
+      );
     }
   }
 
-  return NextResponse.json({ wishlist: ownerView(list), added }, { headers: noStore });
+  return NextResponse.json(
+    { wishlist: ownerView(list), added },
+    { headers: noStore },
+  );
 }

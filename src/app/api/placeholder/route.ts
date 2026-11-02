@@ -17,12 +17,23 @@ const PALETTES: [string, string][] = [
 
 function hash(s: string): number {
   let h = 0;
-  for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+  for (let i = 0; i < s.length; i++)
+    h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
   return Math.abs(h);
 }
 
 function escapeXml(s: string): string {
-  return s.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[c]!);
+  return s.replace(
+    /[<>&'"]/g,
+    (c) =>
+      ({
+        "<": "&lt;",
+        ">": "&gt;",
+        "&": "&amp;",
+        "'": "&apos;",
+        '"': "&quot;",
+      })[c]!,
+  );
 }
 
 function wrap(text: string, perLine: number, maxLines: number): string[] {

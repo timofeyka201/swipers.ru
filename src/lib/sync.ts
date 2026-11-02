@@ -1,6 +1,7 @@
 "use client";
 
 import { useStore, type SyncedProfile } from "./store";
+import { toast } from "@/components/Toast";
 import { loadMyWishlist } from "./wish/client";
 
 /**
@@ -23,18 +24,46 @@ let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let pushing: Promise<void> | null = null;
 let started = false;
 
+let remoteRevision = 0;
+let revisionUser = "";
+let syncQueue: Promise<void> = Promise.resolve();
 async function push(): Promise<void> {
+  const user = useStore.getState().account?.id;
+  const task = syncQueue.then(() =>
+    user === useStore.getState().account?.id ? pushNow() : undefined,
+  );
+  syncQueue = task.catch(() => undefined);
+  return task;
+}
+async function pushNow(): Promise<void> {
   const { account, exportProfile } = useStore.getState();
   if (!account) return;
   const profile = exportProfile();
+  let responseError = "Нет связи: изменения сохранены на этом устройстве";
   try {
-    await fetch("/api/sync", {
+    const response = await fetch("/api/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profile, updatedAt: profile.updatedAt || Date.now() }),
+      body: JSON.stringify({
+        profile,
+        updatedAt: profile.updatedAt || Date.now(),
+        revision: revisionUser === account.id ? remoteRevision : 0,
+      }),
     });
+    if (response.status === 409)
+      responseError =
+        "Данные изменены на другом устройстве. Обновите страницу перед продолжением.";
+    if (!response.ok) throw new Error("SYNC_FAILED");
+    const data = await response.json();
+    if (useStore.getState().account?.id === account.id) {
+      remoteRevision = data.revision;
+      revisionUser = account.id;
+    }
   } catch {
-    /* сеть пропала — отправим при следующем изменении */
+    if (useStore.getState().account?.id === account.id) {
+      toast(responseError);
+    }
+    /* Retry after connectivity returns; keep the local profile. */
   }
 }
 
@@ -59,9 +88,16 @@ export async function flushPush(): Promise<void> {
 
 async function fetchRemote(): Promise<SyncedProfile | null | "error"> {
   try {
+    const accountId = useStore.getState().account?.id;
     const res = await fetch("/api/sync", { cache: "no-store" });
     if (!res.ok) return "error";
-    const { profile } = (await res.json()) as { profile: SyncedProfile | null };
+    const { profile, revision } = (await res.json()) as {
+      profile: SyncedProfile | null;
+      revision: number;
+    };
+    if (accountId !== useStore.getState().account?.id) return "error";
+    remoteRevision = revision ?? 0;
+    revisionUser = accountId ?? "";
     return profile;
   } catch {
     return "error";
@@ -81,9 +117,14 @@ function merge(local: SyncedProfile, remote: SyncedProfile): SyncedProfile {
   const fresh = remoteNewer ? remote : local;
   const stale = remoteNewer ? local : remote;
 
-  const weights = (a: Record<string, number> = {}, b: Record<string, number> = {}, limit = 8) => {
+  const weights = (
+    a: Record<string, number> = {},
+    b: Record<string, number> = {},
+    limit = 8,
+  ) => {
     const out: Record<string, number> = { ...a };
-    for (const [k, v] of Object.entries(b)) out[k] = Math.max(-limit, Math.min(limit, (out[k] ?? 0) + v));
+    for (const [k, v] of Object.entries(b))
+      out[k] = Math.max(-limit, Math.min(limit, (out[k] ?? 0) + v));
     return out;
   };
 
@@ -96,10 +137,14 @@ function merge(local: SyncedProfile, remote: SyncedProfile): SyncedProfile {
       for (const c of local.cart ?? []) if (!ids.has(c.product.id)) out.push(c);
       return out;
     })(),
-    rejected: [...new Set([...(remote.rejected ?? []), ...(local.rejected ?? [])])].slice(0, 2000),
+    rejected: [
+      ...new Set([...(remote.rejected ?? []), ...(local.rejected ?? [])]),
+    ].slice(0, 2000),
     watch: { ...(local.watch ?? {}), ...(remote.watch ?? {}) },
     taste: {
-      picked: fresh.taste?.picked?.length ? fresh.taste.picked : (stale.taste?.picked ?? []),
+      picked: fresh.taste?.picked?.length
+        ? fresh.taste.picked
+        : (stale.taste?.picked ?? []),
       budget: fresh.taste?.budget ?? stale.taste?.budget,
       categories: weights(remote.taste?.categories, local.taste?.categories),
       brands: weights(remote.taste?.brands, local.taste?.brands),
@@ -110,7 +155,9 @@ function merge(local: SyncedProfile, remote: SyncedProfile): SyncedProfile {
       // сложенные веса — новое начало отсчёта.
       decayedAt: Date.now(),
     },
-    sizes: Object.keys(fresh.sizes ?? {}).length ? fresh.sizes : (stale.sizes ?? {}),
+    sizes: Object.keys(fresh.sizes ?? {}).length
+      ? fresh.sizes
+      : (stale.sizes ?? {}),
     // Имя и телефон: поле за полем, иначе заполненное на одном устройстве
     // затирается пустотой с другого.
     person: {
@@ -123,7 +170,10 @@ function merge(local: SyncedProfile, remote: SyncedProfile): SyncedProfile {
       ...fresh.stats,
       swipes: Math.max(local.stats?.swipes ?? 0, remote.stats?.swipes ?? 0),
       likes: Math.max(local.stats?.likes ?? 0, remote.stats?.likes ?? 0),
-      bestStreak: Math.max(local.stats?.bestStreak ?? 0, remote.stats?.bestStreak ?? 0),
+      bestStreak: Math.max(
+        local.stats?.bestStreak ?? 0,
+        remote.stats?.bestStreak ?? 0,
+      ),
     },
     tasted: (local.tasted ?? false) || (remote.tasted ?? false),
     updatedAt: Date.now(),
@@ -139,6 +189,7 @@ export async function syncOnLogin(): Promise<"merged" | "pushed" | "none"> {
   if (!state.account) return "none";
 
   const remote = await fetchRemote();
+  if (useStore.getState().account?.id !== state.account.id) return "none";
   if (remote === "error") return "none";
   if (!remote) {
     await push();
@@ -187,9 +238,14 @@ export function startSyncAgent(): () => void {
     if (document.visibilityState === "hidden") void flushPush();
   };
   document.addEventListener("visibilitychange", onHide);
+  const online = () => void pullProfile();
+  window.addEventListener("online", online);
 
   return () => {
     unsubscribe();
+    window.removeEventListener("online", online);
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = null;
     document.removeEventListener("visibilitychange", onHide);
     started = false;
   };

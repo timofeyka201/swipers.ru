@@ -1,11 +1,12 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 
 export type UserRecord = {
   id: string;
   email: string;
   name?: string;
-  passwordHash: string;
+  passwordHash?: string;
   createdAt: string;
   /** Почта подтверждена переходом по ссылке из письма. */
   emailVerified?: boolean;
@@ -17,7 +18,11 @@ export type UserRecord = {
   passwordChangedAt?: number;
 };
 
-export type SessionRecord = { userId: string; expiresAt: number; issuedAt: number };
+export type SessionRecord = {
+  userId: string;
+  expiresAt: number;
+  issuedAt: number;
+};
 
 export interface AuthStore {
   readonly kind: "redis" | "file";
@@ -38,6 +43,10 @@ export interface AuthStore {
   takeToken(key: string): Promise<string | null>;
   getProfile(userId: string): Promise<string | null>;
   putProfile(userId: string, json: string): Promise<void>;
+  editProfile(
+    userId: string,
+    fn: (raw: string | null) => string | null,
+  ): Promise<void>;
   /**
    * Произвольная запись сервиса — вишлисты, указатель «код → владелец», брони.
    * Отдельные методы под каждый вид записи раздували бы оба хранилища вдвое,
@@ -52,14 +61,19 @@ export interface AuthStore {
    * прийти одновременно: двое друзей бронируют подарки в одном списке.
    * Возврат null из fn оставляет запись нетронутой.
    */
-  editDoc(key: string, fn: (current: string | null) => string | null): Promise<void>;
+  editDoc(
+    key: string,
+    fn: (current: string | null) => string | null,
+  ): Promise<void>;
 }
 
 // ------------------------------------------------------------------- Redis
 /** Текст ошибки важнее её кода: по нему человек чинит настройку, не залезая в исходники. */
 function explainStatus(status: number, body: string): string {
-  if (status === 401 || status === 403) return "токен не подошёл (AUTH_REDIS_TOKEN)";
-  if (status === 404) return "по этому адресу ничего нет — проверьте AUTH_REDIS_URL";
+  if (status === 401 || status === 403)
+    return "токен не подошёл (AUTH_REDIS_TOKEN)";
+  if (status === 404)
+    return "по этому адресу ничего нет — проверьте AUTH_REDIS_URL";
   if (status === 429) return "исчерпан лимит запросов к базе";
   if (status >= 500) return "база временно недоступна";
   return body.slice(0, 200) || `код ответа ${status}`;
@@ -75,17 +89,32 @@ function redisStore(url: string, token: string): AuthStore {
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(command),
         cache: "no-store",
+        signal: AbortSignal.timeout(8000),
       });
     } catch (e) {
       // Сюда попадают опечатка в домене, отсутствие сети и обрыв соединения.
-      throw new Error(`не удалось связаться с базой: ${e instanceof Error ? e.message : "сеть недоступна"}`);
+      throw new Error(
+        `не удалось связаться с базой: ${e instanceof Error ? e.message : "сеть недоступна"}`,
+      );
     }
-    if (!res.ok) throw new Error(explainStatus(res.status, await res.text().catch(() => "")));
-    const json = (await res.json().catch(() => null)) as { result?: T; error?: string } | null;
-    if (!json) throw new Error("база ответила не в формате REST-шлюза — похоже, адрес ведёт не туда");
+    if (!res.ok)
+      throw new Error(
+        explainStatus(res.status, await res.text().catch(() => "")),
+      );
+    const json = (await res.json().catch(() => null)) as {
+      result?: T;
+      error?: string;
+    } | null;
+    if (!json)
+      throw new Error(
+        "база ответила не в формате REST-шлюза — похоже, адрес ведёт не туда",
+      );
     if (json.error) throw new Error(json.error);
     return json.result ?? null;
   };
@@ -108,42 +137,60 @@ function redisStore(url: string, token: string): AuthStore {
       await call(["SET", key, "ok", "EX", 60]);
       const back = await call<string>(["GET", key]);
       await call(["DEL", key]);
-      if (back !== "ok") throw new Error("база приняла запись, но вернула не то, что записали");
+      if (back !== "ok")
+        throw new Error("база приняла запись, но вернула не то, что записали");
     },
     userIdByEmail: (email) => call<string>(["GET", `user:email:${email}`]),
     getUser: (id) => getJson<UserRecord>(`user:${id}`),
     async createUser(user) {
       // NX не даёт перезаписать чужую регистрацию при гонке двух запросов.
-      const claimed = await call<string>(["SET", `user:email:${user.email}`, user.id, "NX"]);
-      if (claimed !== "OK") throw new Error("EMAIL_TAKEN");
-      await call(["SET", `user:${user.id}`, JSON.stringify(user)]);
+      const ok = await call<number>([
+        "EVAL",
+        "if redis.call('EXISTS',KEYS[1])==1 then return 0 end redis.call('SET',KEYS[1],ARGV[1]); redis.call('SET',KEYS[2],ARGV[2]); return 1",
+        2,
+        `user:email:${user.email}`,
+        `user:${user.id}`,
+        user.id,
+        JSON.stringify(user),
+      ]);
+      if (!ok) throw new Error("EMAIL_TAKEN");
     },
     async updateUser(user) {
       await call(["SET", `user:${user.id}`, JSON.stringify(user)]);
     },
     async putSession(token, session) {
-      const ttl = Math.max(60, Math.floor((session.expiresAt - Date.now()) / 1000));
-      await call(["SET", `session:${token}`, JSON.stringify(session), "EX", ttl]);
+      const ttl = Math.max(
+        60,
+        Math.floor((session.expiresAt - Date.now()) / 1000),
+      );
+      await call([
+        "SET",
+        `session:${token}`,
+        JSON.stringify(session),
+        "EX",
+        ttl,
+      ]);
     },
     getSession: (token) => getJson<SessionRecord>(`session:${token}`),
     async deleteSession(token) {
       await call(["DEL", `session:${token}`]);
     },
     async putToken(key, value, ttlSeconds) {
-      await call(["SET", `tok:${key}`, value, "EX", Math.max(60, Math.floor(ttlSeconds))]);
+      await call([
+        "SET",
+        `tok:${key}`,
+        value,
+        "EX",
+        Math.max(60, Math.floor(ttlSeconds)),
+      ]);
     },
     async takeToken(key) {
-      try {
-        return await call<string>(["GETDEL", `tok:${key}`]);
-      } catch {
-        // GETDEL есть не в каждом шлюзе. Тогда читаем и стираем двумя командами:
-        // окно на повторное использование ничтожно, а ссылка всё равно одноразовая.
-        const value = await call<string>(["GET", `tok:${key}`]);
-        await call(["DEL", `tok:${key}`]);
-        return value;
-      }
+      return call<string>(["GETDEL", `tok:${key}`]);
     },
     getProfile: (userId) => call<string>(["GET", `profile:${userId}`]),
+    async editProfile(userId, fn) {
+      await this.editDoc(`profile:${userId}`, fn);
+    },
     async putProfile(userId, json) {
       await call(["SET", `profile:${userId}`, json]);
     },
@@ -155,12 +202,23 @@ function redisStore(url: string, token: string): AuthStore {
       return (await call<string>(["SET", key, value, "NX"])) === "OK";
     },
     async editDoc(key, fn) {
-      // Честно: у REST-шлюза нет транзакции на чтение-запись, поэтому две
-      // одновременные правки одного списка теоретически могут наложиться.
-      // Окно — единицы миллисекунд, а цена — чужая бронь; когда это станет
-      // важно, здесь появится EVAL с маленьким скриптом на Lua.
-      const next = fn(await call<string>(["GET", key]));
-      if (next !== null) await call(["SET", key, next]);
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const current = await call<string>(["GET", key]);
+        const next = fn(current);
+        if (next === null) return;
+        const ok = await call<number>([
+          "EVAL",
+          "local v=redis.call('GET',KEYS[1]); if (ARGV[1]=='0' and not v) or (ARGV[1]=='1' and v==ARGV[2]) then redis.call('SET',KEYS[1],ARGV[3]); if ARGV[4]=='1' then redis.call('EXPIRE',KEYS[1],86400) end; return 1 end return 0",
+          1,
+          key,
+          current === null ? "0" : "1",
+          current ?? "",
+          next,
+          key.startsWith("limit:") ? "1" : "0",
+        ]);
+        if (ok) return;
+      }
+      throw new Error("CONCURRENT_UPDATE");
     },
   };
 }
@@ -174,7 +232,14 @@ type FileShape = {
   docs: Record<string, string>;
 };
 
-const EMPTY: FileShape = { users: {}, emails: {}, sessions: {}, profiles: {}, tokens: {}, docs: {} };
+const EMPTY: FileShape = {
+  users: {},
+  emails: {},
+  sessions: {},
+  profiles: {},
+  tokens: {},
+  docs: {},
+};
 
 /**
  * Хранилище для разработки и самостоятельного запуска. На Vercel не годится:
@@ -185,9 +250,13 @@ function fileStore(path: string): AuthStore {
 
   const read = async (): Promise<FileShape> => {
     try {
-      return { ...EMPTY, ...(JSON.parse(await readFile(path, "utf8")) as FileShape) };
-    } catch {
-      return { ...EMPTY };
+      return {
+        ...EMPTY,
+        ...(JSON.parse(await readFile(path, "utf8")) as FileShape),
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      return structuredClone(EMPTY);
     }
   };
 
@@ -195,13 +264,19 @@ function fileStore(path: string): AuthStore {
   const mutate = <T>(fn: (data: FileShape) => T | Promise<T>): Promise<T> => {
     const next = queue.then(async () => {
       const data = await read();
+      prune(data);
       const result = await fn(data);
       await mkdir(dirname(path), { recursive: true });
       // 0600 и при создании, и потом: в файле лежат хэши паролей и живые
       // сессии, и читать его не должен никто, кроме самого приложения.
       // Каталог данных закрыт, но с этого года в него заходит nginx за
       // картинками — пусть право на вход ничего не открывает.
-      await writeFile(path, JSON.stringify(data, null, 2), { encoding: "utf8", mode: 0o600 });
+      const tmp = `${path}.${randomUUID()}.tmp`;
+      await writeFile(tmp, JSON.stringify(data), {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+      await rename(tmp, path);
       await chmod(path, 0o600);
       return result;
     });
@@ -211,6 +286,14 @@ function fileStore(path: string): AuthStore {
 
   const prune = (data: FileShape) => {
     const now = Date.now();
+    for (const [key, value] of Object.entries(data.docs ?? {}))
+      if (key.startsWith("limit:")) {
+        try {
+          if (JSON.parse(value).until < now) delete data.docs[key];
+        } catch {
+          delete data.docs[key];
+        }
+      }
     for (const [token, s] of Object.entries(data.sessions)) {
       if (s.expiresAt < now) delete data.sessions[token];
     }
@@ -259,13 +342,21 @@ function fileStore(path: string): AuthStore {
     putToken: (key, value, ttlSeconds) =>
       mutate((data) => {
         prune(data);
-        data.tokens[key] = { value, expiresAt: Date.now() + Math.max(60, ttlSeconds) * 1000 };
+        data.tokens[key] = {
+          value,
+          expiresAt: Date.now() + Math.max(60, ttlSeconds) * 1000,
+        };
       }),
     takeToken: (key) =>
       mutate((data) => {
         const entry = data.tokens[key];
         delete data.tokens[key];
         return entry && entry.expiresAt > Date.now() ? entry.value : null;
+      }),
+    editProfile: (userId, fn) =>
+      mutate((data) => {
+        const next = fn(data.profiles[userId] ?? null);
+        if (next !== null) data.profiles[userId] = next;
       }),
     async getProfile(userId) {
       return (await read()).profiles[userId] ?? null;
@@ -297,7 +388,6 @@ function fileStore(path: string): AuthStore {
   };
 }
 
-
 // ------------------------------------------------------------------- выбор
 /**
  * Upstash показывает ключи готовой строкой для .env, и её часто копируют целиком —
@@ -322,7 +412,9 @@ function pick(...names: string[]): Found {
   return null;
 }
 
-type Config = { url: string; token: string; problem?: undefined } | { url?: undefined; token?: undefined; problem: string | null };
+type Config =
+  | { url: string; token: string; problem?: undefined }
+  | { url?: undefined; token?: undefined; problem: string | null };
 
 /**
  * Разбор настроек хранилища. problem — то, что человек может починить руками;
@@ -333,33 +425,45 @@ function readConfig(): Config {
   const token = pick("AUTH_REDIS_TOKEN", "UPSTASH_REDIS_REST_TOKEN");
 
   if (!url && !token) return { problem: null };
-  if (!url) return { problem: "токен задан, а адреса нет — добавьте AUTH_REDIS_URL" };
-  if (!token) return { problem: "адрес задан, а токена нет — добавьте AUTH_REDIS_TOKEN" };
+  if (!url)
+    return { problem: "токен задан, а адреса нет — добавьте AUTH_REDIS_URL" };
+  if (!token)
+    return { problem: "адрес задан, а токена нет — добавьте AUTH_REDIS_TOKEN" };
   if (/^rediss?:\/\//i.test(url.value)) {
     return {
       problem: `в ${url.name} попал адрес для TCP-подключения (redis://…). Нужен адрес из блока «REST API», он начинается с https://`,
     };
   }
   if (!/^https?:\/\//i.test(url.value)) {
-    return { problem: `${url.name} должен начинаться с https://, а там «${url.value.slice(0, 40)}»` };
+    return {
+      problem: `${url.name} должен начинаться с https://, а там «${url.value.slice(0, 40)}»`,
+    };
   }
   return { url: url.value.replace(/\/+$/, ""), token: token.value };
 }
 
-const onServerless = () => !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+const onServerless = () =>
+  !!process.env.VERCEL || !!process.env.AWS_LAMBDA_FUNCTION_NAME;
 
 /**
  * На Vercel и в Lambda весь диск смонтирован только для чтения, кроме /tmp:
  * запись в .data/ там не теряется со временем, а падает на первой же попытке.
  */
-const filePath = () => process.env.AUTH_FILE || (onServerless() ? "/tmp/swiper-auth.json" : ".data/auth.json");
+const filePath = () =>
+  process.env.AUTH_FILE ||
+  (onServerless() ? "/tmp/swiper-auth.json" : ".data/auth.json");
 
 let cached: AuthStore | null = null;
 
 export function authStore(): AuthStore {
   if (cached) return cached;
   const config = readConfig();
-  cached = config.url ? redisStore(config.url, config.token) : fileStore(filePath());
+  if (config.problem) throw new Error(config.problem);
+  if (!config.url && onServerless())
+    throw new Error("Durable auth storage required");
+  cached = config.url
+    ? redisStore(config.url, config.token)
+    : fileStore(filePath());
   return cached;
 }
 
@@ -367,7 +471,8 @@ export function authStore(): AuthStore {
 export function storageWarning(): string | null {
   if (authStore().durable) return null;
   const { problem } = readConfig();
-  if (problem) return `Хранилище настроено с ошибкой: ${problem}. Пока учётные записи пишутся в файл.`;
+  if (problem)
+    return `Хранилище настроено с ошибкой: ${problem}. Пока учётные записи пишутся в файл.`;
   return onServerless()
     ? "Учётные записи сейчас пишутся в файл, а на этом хостинге файловая система эфемерная: регистрации будут пропадать. Задайте AUTH_REDIS_URL и AUTH_REDIS_TOKEN."
     : null;
@@ -384,7 +489,13 @@ export type StorageReport = {
 export async function diagnoseStorage(): Promise<StorageReport> {
   const store = authStore();
   const { problem } = readConfig();
-  if (problem) return { kind: store.kind, durable: false, reachable: false, detail: problem };
+  if (problem)
+    return {
+      kind: store.kind,
+      durable: false,
+      reachable: false,
+      detail: problem,
+    };
 
   try {
     await store.check();
@@ -401,7 +512,13 @@ export async function diagnoseStorage(): Promise<StorageReport> {
     };
   }
 
-  if (store.durable) return { kind: "redis", durable: true, reachable: true, detail: "Запись и чтение работают." };
+  if (store.durable)
+    return {
+      kind: "redis",
+      durable: true,
+      reachable: true,
+      detail: "Запись и чтение работают.",
+    };
   return {
     kind: "file",
     durable: false,

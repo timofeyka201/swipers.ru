@@ -110,12 +110,17 @@ export const formatCode = (code: string): string => `SW-${code}`;
  * ссылку на список — люди чаще присылают ссылку, чем код.
  */
 export function normalizeCode(input: string): string | null {
-  const tail = input.trim().split(/[?#]/)[0].split("/").filter(Boolean).pop() ?? "";
-  const code = tail.toUpperCase().replace(/^SW[-_ ]?/, "").replace(/[^A-Z0-9]/g, "");
+  const tail =
+    input.trim().split(/[?#]/)[0].split("/").filter(Boolean).pop() ?? "";
+  const code = tail
+    .toUpperCase()
+    .replace(/^SW[-_ ]?/, "")
+    .replace(/[^A-Z0-9]/g, "");
   return CODE_RE.test(code) ? code : null;
 }
 
-export const clip = (value: string, max: number): string => value.trim().slice(0, max);
+export const clip = (value: string, max: number): string =>
+  (typeof value === "string" ? value.trim() : "").slice(0, max);
 
 /**
  * Фотография, которую человек приложил из галереи: она лежит у нас, и адрес у
@@ -126,7 +131,7 @@ export const UPLOAD_PATH = /^\/uploads\/[a-f0-9]{32}\.webp$/;
 
 /** Ссылка «http(s)://…» или наш собственный файл: javascript: в чужом списке ни к чему. */
 export function safeUrl(input?: string): string | undefined {
-  const raw = input?.trim();
+  const raw = typeof input === "string" ? input.trim() : "";
   if (!raw) return undefined;
   if (UPLOAD_PATH.test(raw)) return raw;
   const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;

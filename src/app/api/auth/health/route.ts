@@ -16,9 +16,15 @@ export async function GET() {
     {
       ...storage,
       mail: mail
-        ? { ready: false, detail: `${mail}. Подтверждение почты и смена пароля работать не будут.` }
+        ? {
+            ready: false,
+            detail: `${mail}. Подтверждение почты и смена пароля работать не будут.`,
+          }
         : { ready: true, detail: "Ключ почтового сервиса на месте." },
     },
-    { status: storage.reachable ? 200 : 503, headers: { "Cache-Control": "no-store" } },
+    {
+      status: storage.reachable ? 200 : 503,
+      headers: { "Cache-Control": "no-store" },
+    },
   );
 }

@@ -12,3 +12,6 @@ Thumbs.db
 
 # локальное хранилище учётных записей
 .data
+
+.env.production
+.env.*.local

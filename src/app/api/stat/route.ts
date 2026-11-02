@@ -1,3 +1,6 @@
+import { readJson } from "@/lib/read-json";
+import { limit } from "@/lib/auth/otp";
+import { clientKey } from "@/lib/auth/session";
 import { NextRequest, NextResponse } from "next/server";
 import { CLIENT_EVENTS, logEvents, type EventType } from "@/lib/stats/events";
 
@@ -25,19 +28,28 @@ type Body = {
  * делать, а лишний разговор на каждом свайпе ни к чему.
  */
 export async function POST(req: NextRequest) {
+  if (Number(req.headers.get("content-length")) > 32768)
+    return new NextResponse(null, { status: 413 });
+  if (!(await limit("stats:" + clientKey(req), 120, 60000)))
+    return new NextResponse(null, { status: 429 });
   let body: Body;
   try {
-    body = (await req.json()) as Body;
+    body = (await readJson(req, 32768)) as Body;
   } catch {
     return new NextResponse(null, { status: 204 });
   }
 
   const device = typeof body.device === "string" ? body.device : undefined;
   const session = typeof body.session === "string" ? body.session : undefined;
-  const incoming = Array.isArray(body.events) ? body.events.slice(0, MAX_BATCH) : [];
+  const incoming = Array.isArray(body.events)
+    ? body.events.slice(0, MAX_BATCH)
+    : [];
 
   const events = incoming
-    .filter((e) => typeof e?.type === "string" && CLIENT_EVENTS.has(e.type as EventType))
+    .filter(
+      (e) =>
+        typeof e?.type === "string" && CLIENT_EVENTS.has(e.type as EventType),
+    )
     .map(({ type, ...payload }) => ({
       type: type as EventType,
       payload: { ...payload, device, session },

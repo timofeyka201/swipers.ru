@@ -28,16 +28,23 @@ export const displayName = (user: Pick<UserRecord, "name" | "email">): string =>
 
 function newCode(): string {
   let out = "";
-  for (let i = 0; i < CODE_LENGTH; i += 1) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  for (let i = 0; i < CODE_LENGTH; i += 1)
+    out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   return out;
 }
 
+const originals = new WeakMap<Wishlist, Wishlist>();
 async function read(userId: string): Promise<Wishlist | null> {
   const raw = await authStore().getDoc(listKey(userId));
   if (!raw) return null;
   try {
     const list = JSON.parse(raw) as Wishlist;
-    return { ...list, items: Array.isArray(list.items) ? list.items : [] };
+    const result = {
+      ...list,
+      items: Array.isArray(list.items) ? list.items : [],
+    };
+    originals.set(result, structuredClone(result));
+    return result;
   } catch {
     return null;
   }
@@ -45,7 +52,8 @@ async function read(userId: string): Promise<Wishlist | null> {
 
 async function write(list: Wishlist): Promise<void> {
   const payload = JSON.stringify({ ...list, updatedAt: Date.now() });
-  if (payload.length > MAX_BYTES) throw new Error("WISHLIST_TOO_BIG");
+  if (Buffer.byteLength(payload) > MAX_BYTES)
+    throw new Error("WISHLIST_TOO_BIG");
   await authStore().putDoc(listKey(list.ownerId), payload);
 }
 
@@ -62,7 +70,7 @@ export async function myWishlist(user: UserRecord): Promise<Wishlist> {
     const name = displayName(user);
     if (existing.ownerName !== name) {
       existing.ownerName = name;
-      await write(existing);
+      await saveWishlist(existing);
     }
     return existing;
   }
@@ -70,9 +78,11 @@ export async function myWishlist(user: UserRecord): Promise<Wishlist> {
   let code: string | null = null;
   for (let attempt = 0; attempt < 8 && !code; attempt += 1) {
     const candidate = newCode();
-    if (await authStore().claimDoc(codeKey(candidate), user.id)) code = candidate;
+    if (await authStore().claimDoc(codeKey(candidate), user.id))
+      code = candidate;
   }
-  if (!code) throw new Error("Не удалось выдать код списка — попробуйте ещё раз");
+  if (!code)
+    throw new Error("Не удалось выдать код списка — попробуйте ещё раз");
 
   const list: Wishlist = {
     code,
@@ -84,12 +94,70 @@ export async function myWishlist(user: UserRecord): Promise<Wishlist> {
     createdAt: new Date().toISOString(),
     updatedAt: Date.now(),
   };
-  await write(list);
-  return list;
+  let result = list;
+  await authStore().editDoc(listKey(user.id), (raw) => {
+    if (raw) {
+      result = JSON.parse(raw);
+      return null;
+    }
+    return JSON.stringify(list);
+  });
+  originals.set(result, structuredClone(result));
+  return result;
 }
 
 export async function saveWishlist(list: Wishlist): Promise<void> {
-  await write(list);
+  const original = originals.get(list);
+  if (!original) {
+    await write(list);
+    return;
+  }
+  const requested = structuredClone(list);
+  await authStore().editDoc(listKey(list.ownerId), (raw) => {
+    if (!raw) throw new Error("LIST_MISSING");
+    const current = JSON.parse(raw) as Wishlist;
+    for (const key of ["title", "note", "shared", "ownerName"] as const)
+      if (requested[key] !== original[key])
+        Object.assign(current, { [key]: requested[key] });
+    const old = new Map(original.items.map((i) => [i.id, i]));
+    const desired = new Map(requested.items.map((i) => [i.id, i]));
+    current.items = current.items
+      .filter((i) => !old.has(i.id) || desired.has(i.id))
+      .map((item) => {
+        const next = desired.get(item.id);
+        const before = old.get(item.id);
+        if (!next || !before) return item;
+        const merged = { ...item };
+        for (const key of [
+          "title",
+          "price",
+          "currency",
+          "url",
+          "image",
+          "note",
+        ] as const)
+          if (next[key] !== before[key])
+            Object.assign(merged, { [key]: next[key] });
+        return merged;
+      });
+    for (const item of requested.items)
+      if (
+        !old.has(item.id) &&
+        !current.items.some(
+          (i) =>
+            i.id === item.id ||
+            (item.product?.id && i.product?.id === item.product.id),
+        )
+      )
+        current.items.unshift(item);
+    if (current.items.length > MAX_ITEMS) throw new Error("WISHLIST_FULL");
+    current.updatedAt = Date.now();
+    const payload = JSON.stringify(current);
+    if (Buffer.byteLength(payload) > MAX_BYTES)
+      throw new Error("WISHLIST_TOO_BIG");
+    Object.assign(list, current);
+    return payload;
+  });
 }
 
 export async function wishlistByCode(code: string): Promise<Wishlist | null> {
@@ -113,14 +181,21 @@ export const ownerView = (list: Wishlist): OwnerView => ({
   updatedAt: list.updatedAt,
 });
 
-export function friendView(list: Wishlist, viewerId: string | null): FriendView {
+export function friendView(
+  list: Wishlist,
+  viewerId: string | null,
+): FriendView {
   const items: FriendItem[] = list.items.map((item) => {
     const mine = !!item.reserved && item.reserved.userId === viewerId;
     return {
       ...strip(item),
       reserved: !!item.reserved,
       mine,
-      reservedBy: item.reserved ? (mine ? "вы" : item.reserved.name) : undefined,
+      reservedBy: item.reserved
+        ? mine
+          ? "вы"
+          : item.reserved.name
+        : undefined,
     };
   });
   return {
@@ -150,7 +225,10 @@ export function buildItem(input: NewItem): WishItem {
     id: randomUUID(),
     source: input.source,
     title: clip(input.title, MAX_TITLE),
-    price: Number.isFinite(input.price) && (input.price as number) >= 0 ? input.price : undefined,
+    price:
+      Number.isFinite(input.price) && (input.price as number) >= 0
+        ? input.price
+        : undefined,
     currency: input.currency || "RUB",
     url: input.url,
     image: input.image,
@@ -160,10 +238,12 @@ export function buildItem(input: NewItem): WishItem {
   };
 }
 
-export const roomFor = (list: Wishlist): boolean => list.items.length < MAX_ITEMS;
+export const roomFor = (list: Wishlist): boolean =>
+  list.items.length < MAX_ITEMS;
 
 // ------------------------------------------------------------------ брони
-export type ReserveOutcome = "reserved" | "released" | "taken" | "missing" | "own";
+export type ReserveOutcome =
+  "reserved" | "released" | "taken" | "missing" | "own";
 
 /**
  * Бронь ставится и снимается одной атомарной правкой чужого списка: двое
@@ -179,6 +259,8 @@ export async function reserve(
   let snapshot: WishItem | undefined;
 
   await authStore().editDoc(listKey(ownerId), (raw) => {
+    outcome = "missing";
+    snapshot = undefined;
     if (!raw) return null;
     let list: Wishlist;
     try {
@@ -190,6 +272,7 @@ export async function reserve(
       outcome = "own";
       return null;
     }
+    if (!list.shared) return null;
     const item = (list.items ?? []).find((i) => i.id === itemId);
     if (!item) return null;
 
@@ -198,7 +281,11 @@ export async function reserve(
         outcome = "taken";
         return null;
       }
-      item.reserved = { userId: viewer.id, name: viewer.name, at: new Date().toISOString() };
+      item.reserved = {
+        userId: viewer.id,
+        name: viewer.name,
+        at: new Date().toISOString(),
+      };
       outcome = "reserved";
     } else {
       if (item.reserved && item.reserved.userId !== viewer.id) {
@@ -229,7 +316,10 @@ async function readReserved(userId: string): Promise<ReservedEntry[]> {
 }
 
 /** Памятка дарителя: что и в чьём списке он взял на себя. */
-export async function noteReservation(userId: string, entry: ReservedEntry): Promise<void> {
+export async function noteReservation(
+  userId: string,
+  entry: ReservedEntry,
+): Promise<void> {
   await authStore().editDoc(reservedKey(userId), (raw) => {
     let list: ReservedEntry[] = [];
     try {
@@ -237,12 +327,18 @@ export async function noteReservation(userId: string, entry: ReservedEntry): Pro
     } catch {
       list = [];
     }
-    const rest = list.filter((e) => !(e.code === entry.code && e.itemId === entry.itemId));
+    const rest = list.filter(
+      (e) => !(e.code === entry.code && e.itemId === entry.itemId),
+    );
     return JSON.stringify([entry, ...rest].slice(0, MAX_ITEMS));
   });
 }
 
-export async function forgetReservation(userId: string, code: string, itemId: string): Promise<void> {
+export async function forgetReservation(
+  userId: string,
+  code: string,
+  itemId: string,
+): Promise<void> {
   await authStore().editDoc(reservedKey(userId), (raw) => {
     if (!raw) return null;
     let list: ReservedEntry[] = [];
@@ -251,7 +347,9 @@ export async function forgetReservation(userId: string, code: string, itemId: st
     } catch {
       return null;
     }
-    return JSON.stringify(list.filter((e) => !(e.code === code && e.itemId === itemId)));
+    return JSON.stringify(
+      list.filter((e) => !(e.code === code && e.itemId === itemId)),
+    );
   });
 }
 
@@ -266,16 +364,21 @@ export async function myReservations(userId: string): Promise<ReservedEntry[]> {
   const byCode = new Map<string, Wishlist | null>();
 
   for (const entry of entries) {
-    if (!byCode.has(entry.code)) byCode.set(entry.code, await wishlistByCode(entry.code));
+    if (!byCode.has(entry.code))
+      byCode.set(entry.code, await wishlistByCode(entry.code));
     const list = byCode.get(entry.code);
     const item = list?.items.find((i) => i.id === entry.itemId);
     if (!item || item.reserved?.userId !== userId) continue;
-    alive.push({ ...entry, title: item.title, image: item.image, url: item.url, price: item.price, currency: item.currency });
+    alive.push({
+      ...entry,
+      title: item.title,
+      image: item.image,
+      url: item.url,
+      price: item.price,
+      currency: item.currency,
+    });
   }
 
-  if (alive.length !== entries.length) {
-    await authStore().putDoc(reservedKey(userId), JSON.stringify(alive));
-  }
   return alive;
 }
 
@@ -298,7 +401,8 @@ export function tooManyMisses(key: string): boolean {
 export function noteMiss(key: string): void {
   const now = Date.now();
   const entry = misses.get(key);
-  if (!entry || entry.until < now) misses.set(key, { count: 1, until: now + MISS_WINDOW });
+  if (!entry || entry.until < now)
+    misses.set(key, { count: 1, until: now + MISS_WINDOW });
   else entry.count += 1;
   if (misses.size > 5000) {
     for (const [k, v] of misses) if (v.until < now) misses.delete(k);

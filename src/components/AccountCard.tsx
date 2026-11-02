@@ -28,9 +28,13 @@ export default function AccountCard() {
             <IconUser className="h-5 w-5" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-semibold">{account.name || account.email}</span>
+            <span className="block truncate text-[14px] font-semibold">
+              {account.name || account.email}
+            </span>
             <span className="block truncate text-[12px] text-[var(--color-muted)]">
-              {account.name ? account.email : "Избранное и корзина синхронизируются"}
+              {account.name
+                ? account.email
+                : "Избранное и корзина синхронизируются"}
             </span>
           </span>
           <button
@@ -40,7 +44,13 @@ export default function AccountCard() {
             onClick={async () => {
               // Локальные данные не трогаем: выход — не удаление.
               await flushPush();
-              await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+              const response = await fetch("/api/auth/logout", {
+                method: "POST",
+              }).catch(() => null);
+              if (!response?.ok) {
+                toast("Не удалось выйти. Проверьте связь");
+                return;
+              }
               setAccount(null);
               toast("Вы вышли");
             }}
@@ -59,7 +69,9 @@ export default function AccountCard() {
             <IconUser className="h-5 w-5" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-semibold">Войти или зарегистрироваться</span>
+            <span className="block text-[14px] font-semibold">
+              Войти или зарегистрироваться
+            </span>
             <span className="block text-[12px] leading-snug text-[var(--color-muted)]">
               Чтобы списки не остались в одном браузере
             </span>
@@ -67,38 +79,6 @@ export default function AccountCard() {
           <IconChevron className="h-5 w-5 shrink-0 text-[var(--color-muted)]" />
         </button>
       )}
-
-      {account && account.emailVerified === false && (
-        <div className="mt-2 rounded-2xl bg-[var(--color-super-soft)] px-4 py-3">
-          <p className="text-[13px] leading-snug text-[var(--color-ink-soft)]">
-            Почта не подтверждена. Без этого не получится восстановить пароль, если он забудется.
-          </p>
-          <button
-            type="button"
-            disabled={verifySending}
-            onClick={async () => {
-              setVerifySending(true);
-              try {
-                const res = await fetch("/api/auth/verify/send", { method: "POST" });
-                const data = (await res.json()) as { ok?: boolean; error?: string };
-                toast(
-                  data.ok ? "Письмо отправлено — проверьте почту" : (data.error ?? "Не получилось отправить"),
-                  data.ok ? "like" : "warn",
-                );
-              } catch {
-                toast("Сервер не отвечает", "warn");
-              } finally {
-                setVerifySending(false);
-              }
-            }}
-            className="mt-2 min-h-[44px] rounded-xl bg-[var(--color-surface)] px-4 text-[13px] font-bold text-[var(--color-ink)] disabled:opacity-50"
-          >
-            {verifySending ? "Отправляем…" : "Выслать письмо ещё раз"}
-          </button>
-        </div>
-      )}
-
-      <AuthSheet open={authOpen} onClose={() => setAuthOpen(false)} />
     </>
   );
 }

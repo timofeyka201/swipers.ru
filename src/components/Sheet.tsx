@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { IconX } from "./Icons";
 
 /**
@@ -22,14 +22,44 @@ export default function Sheet({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
+  const dialog = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const previous = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    const focusTimer = setTimeout(
+      () =>
+        dialog.current
+          ?.querySelector<HTMLElement>("input,button,[tabindex]")
+          ?.focus(),
+      0,
+    );
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "Tab") {
+        const elements = Array.from(
+          dialog.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]),input:not([disabled]),a[href],select,textarea,[tabindex="0"]',
+          ) ?? [],
+        );
+        const first = elements[0],
+          last = elements.at(-1);
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
     window.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      clearTimeout(focusTimer);
+      document.body.style.overflow = overflow;
+      previous?.focus();
     };
   }, [open, onClose]);
 
@@ -44,6 +74,7 @@ export default function Sheet({
           onClick={onClose}
         >
           <motion.div
+            ref={dialog}
             role="dialog"
             aria-modal="true"
             aria-label={title}
@@ -66,8 +97,14 @@ export default function Sheet({
                 <IconX className="h-[18px] w-[18px]" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">{children}</div>
-            {footer && <div className="shrink-0 border-t border-[var(--color-line)] px-5 py-3">{footer}</div>}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
+              {children}
+            </div>
+            {footer && (
+              <div className="shrink-0 border-t border-[var(--color-line)] px-5 py-3">
+                {footer}
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}
