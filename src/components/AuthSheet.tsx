@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import Link from "next/link";
 import Sheet from "./Sheet";
 import Nickname from "./Nickname";
 import { useStore } from "@/lib/store";
 import { syncOnLogin } from "@/lib/sync";
+import { IconCheck } from "./Icons";
 export default function AuthSheet({
   open,
   onClose,
@@ -12,14 +14,33 @@ export default function AuthSheet({
   onClose: () => void;
 }) {
   const account = useStore((s) => s.account);
-  const [registration, setRegistration] = useState("");
-  const [suggestedNickname, setSuggestedNickname] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState("");
+  const [registration, setRegistration] = useState("");
+  const [suggestedNickname, setSuggestedNickname] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  async function submit() {
+  const [sentAt, setSentAt] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const inputs = useRef<(HTMLInputElement | null)[]>([]);
+  const saved = useStore(
+    (s) =>
+      new Set([
+        ...s.liked.map((p) => p.id),
+        ...s.wishlist.map((p) => p.id),
+        ...s.cart.map((c) => c.product.id),
+      ]).size,
+  );
+  useEffect(() => {
+    if (!challenge) return;
+    const update = () =>
+      setSeconds(Math.max(0, Math.ceil((sentAt + 60000 - Date.now()) / 1000)));
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [challenge, sentAt]);
+  const request = async (confirm = false) => {
     if (busy) return;
     setBusy(true);
     setError("");
@@ -27,7 +48,7 @@ export default function AuthSheet({
       const res = await fetch("/api/auth/code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(challenge ? { challenge, code } : { email }),
+        body: JSON.stringify(confirm ? { challenge, code } : { email }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Не удалось войти");
@@ -35,103 +56,182 @@ export default function AuthSheet({
         setRegistration(data.registration);
         setSuggestedNickname(data.suggestedNickname ?? "");
         setChallenge("");
-        return;
-      }
-      if (data.user) {
+        setCode("");
+      } else if (data.user) {
         useStore.getState().setAccount(data.user);
         await syncOnLogin();
-        setCode("");
         setChallenge("");
-        if (data.user.nickname) onClose();
+        setCode("");
+        onClose();
       } else {
         setChallenge(data.challenge);
         setCode("");
+        setSentAt(Date.now());
+        setTimeout(() => inputs.current[0]?.focus(), 100);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Нет связи с сервером");
     } finally {
       setBusy(false);
     }
-  }
-  if (registration)
+  };
+  if (registration || (account && !account.nickname))
     return (
-      <Sheet open={open} title="Создайте свой никнейм" onClose={onClose}>
-        <Nickname
-          registration={registration}
-          suggestedNickname={suggestedNickname}
-          onComplete={() => {
-            setRegistration("");
-            onClose();
-          }}
-        />
-      </Sheet>
-    );
-  if (account && !account.nickname)
-    return (
-      <Sheet open={open} title="Завершите регистрацию" onClose={onClose}>
-        <Nickname onComplete={onClose} />
+      <Sheet open={open} fullScreen title="Ваш никнейм" onClose={onClose}>
+        <div className="ui-page-body">
+          <Nickname
+            registration={registration || undefined}
+            suggestedNickname={suggestedNickname || undefined}
+            onComplete={() => {
+              setRegistration("");
+              onClose();
+            }}
+          />
+          {registration && (
+            <button
+              className="ui-text-button"
+              onClick={() => {
+                setRegistration("");
+                setChallenge("");
+                setCode("");
+                setError("");
+              }}
+            >
+              Изменить почту
+            </button>
+          )}
+        </div>
       </Sheet>
     );
   return (
-    <Sheet open={open} title="Вход в Swiper" onClose={onClose}>
+    <Sheet open={open} fullScreen title="" onClose={onClose}>
       <form
-        className="space-y-4 pb-6"
+        className="ui-login-content"
         onSubmit={(e) => {
           e.preventDefault();
-          void submit();
+          void request(!!challenge);
         }}
       >
-        <p>
+        <h1>{challenge ? "Код из письма" : "Вход по почте"}</h1>
+        <p className="ui-muted">
           {challenge
-            ? "Код отправлен на " + email
-            : "Введите почту — пришлём код для входа или регистрации."}
+            ? "Отправили 6 цифр на " + email + ". Пароль не нужен."
+            : "Пришлём код на почту. Пароль не нужен."}
         </p>
         {!challenge ? (
-          <label className="block">
-            Почта
+          <label className="ui-field-label">
+            <span className="ui-label">Почта</span>
             <input
-              className="field auth-field"
+              className="ui-input"
+              required
               type="email"
               autoComplete="email"
-              required
               maxLength={254}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
         ) : (
-          <label className="block">
-            Код из письма
-            <input
-              className="mt-2 w-full rounded-xl border p-3 text-black"
-              autoComplete="one-time-code"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              required
-              maxLength={6}
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            />
-          </label>
+          <>
+            <div className="ui-otp">
+              {Array.from({ length: 6 }, (_, i) => (
+                <input
+                  key={i}
+                  ref={(el) => {
+                    inputs.current[i] = el;
+                  }}
+                  aria-label={"Цифра " + (i + 1)}
+                  inputMode="numeric"
+                  autoComplete={i === 0 ? "one-time-code" : "off"}
+                  value={code[i] ?? ""}
+                  maxLength={i === 0 ? 6 : 1}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, "");
+                    if (value.length > 1) {
+                      setCode(value.slice(0, 6));
+                      inputs.current[Math.min(5, value.length)]?.focus();
+                      return;
+                    }
+                    const chars = code.padEnd(6, " ").split("");
+                    chars[i] = value || " ";
+                    setCode(chars.join("").trimEnd());
+                    if (value) inputs.current[i + 1]?.focus();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Backspace" && !code[i])
+                      inputs.current[Math.max(0, i - 1)]?.focus();
+                    if (e.key === "ArrowLeft")
+                      inputs.current[Math.max(0, i - 1)]?.focus();
+                    if (e.key === "ArrowRight")
+                      inputs.current[Math.min(5, i + 1)]?.focus();
+                  }}
+                  onPaste={(e) => {
+                    const value = e.clipboardData
+                      .getData("text")
+                      .replace(/\D/g, "")
+                      .slice(0, 6);
+                    if (value) {
+                      e.preventDefault();
+                      setCode(value);
+                      inputs.current[Math.min(5, value.length)]?.focus();
+                    }
+                  }}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              className="ui-text-button"
+              style={{ textAlign: "left", padding: 0 }}
+              disabled={busy || seconds > 0}
+              onClick={() => void request(false)}
+            >
+              {seconds
+                ? "Отправить снова через " +
+                  Math.floor(seconds / 60) +
+                  ":" +
+                  String(seconds % 60).padStart(2, "0")
+                : "Отправить код снова"}
+            </button>
+            <button
+              type="button"
+              className="ui-text-button"
+              style={{ textAlign: "left", padding: 0 }}
+              onClick={() => {
+                setChallenge("");
+                setCode("");
+                setError("");
+              }}
+            >
+              Изменить почту
+            </button>
+          </>
         )}
-        {error && <p role="alert">{error}</p>}
-        <button className="action-primary" disabled={busy}>
-          {busy ? "Подождите…" : challenge ? "Войти" : "Получить код"}
-        </button>
-        {challenge && (
+        {saved > 0 && (
+          <div className="ui-toast-note">
+            <span>
+              <IconCheck />
+            </span>
+            <p>{saved} сохранённых товаров и ваш вкус перенесём в аккаунт</p>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
+        <footer>
+          <p className="ui-legal">
+            Почта нужна для входа.{" "}
+            <Link href="/privacy">Как используются данные</Link>
+          </p>
           <button
-            className="action-secondary"
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setChallenge("");
-              setCode("");
-              setError("");
-            }}
+            className="ui-btn ui-dark"
+            disabled={busy || (!!challenge && !/^\d{6}$/.test(code))}
           >
-            Изменить почту или запросить новый код
+            {busy ? "Подождите…" : challenge ? "Войти" : "Получить код"}
           </button>
-        )}
+        </footer>
       </form>
     </Sheet>
   );
