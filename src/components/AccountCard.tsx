@@ -79,6 +79,7 @@ export default function AccountCard() {
           <IconChevron className="h-5 w-5 shrink-0 text-[var(--color-muted)]" />
         </button>
       )}
+      <AuthSheet open={authOpen} onClose={() => setAuthOpen(false)} />
     </>
   );
 }
