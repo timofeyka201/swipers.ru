@@ -6,6 +6,7 @@ export type UserRecord = {
   id: string;
   email: string;
   name?: string;
+  nickname?: string;
   passwordHash?: string;
   createdAt: string;
   /** Почта подтверждена переходом по ссылке из письма. */
@@ -32,6 +33,7 @@ export interface AuthStore {
   userIdByEmail(email: string): Promise<string | null>;
   getUser(id: string): Promise<UserRecord | null>;
   createUser(user: UserRecord): Promise<void>;
+  claimNickname(userId: string, nickname: string): Promise<UserRecord>;
   /** Перезапись существующей записи: смена пароля, отметка о подтверждении почты. */
   updateUser(user: UserRecord): Promise<void>;
   putSession(token: string, session: SessionRecord): Promise<void>;
@@ -155,8 +157,30 @@ function redisStore(url: string, token: string): AuthStore {
       ]);
       if (!ok) throw new Error("EMAIL_TAKEN");
     },
+    async claimNickname(userId, nickname) {
+      const result = await call<string>([
+        "EVAL",
+        "local raw=redis.call('GET',KEYS[1]); if not raw then return 'USER_MISSING' end; local u=cjson.decode(raw); if u.nickname and u.nickname~=ARGV[1] then return 'NICKNAME_LOCKED' end; local owner=redis.call('GET',KEYS[2]); if owner and owner~=ARGV[2] then return 'NICKNAME_TAKEN' end; u.nickname=ARGV[1]; u.name=ARGV[1]; local value=cjson.encode(u); redis.call('SET',KEYS[2],ARGV[2]); redis.call('SET',KEYS[1],value); return value",
+        2,
+        `user:${userId}`,
+        `nickname:${nickname}`,
+        nickname,
+        userId,
+      ]);
+      if (!result || !result.startsWith("{"))
+        throw new Error(result ?? "STORE_ERROR");
+      return JSON.parse(result);
+    },
     async updateUser(user) {
-      await call(["SET", `user:${user.id}`, JSON.stringify(user)]);
+      await this.editDoc(`user:${user.id}`, (raw) => {
+        const current = raw ? JSON.parse(raw) : {};
+        return JSON.stringify({
+          ...user,
+          ...(current.nickname
+            ? { nickname: current.nickname, name: current.nickname }
+            : {}),
+        });
+      });
     },
     async putSession(token, session) {
       const ttl = Math.max(
@@ -320,9 +344,29 @@ function fileStore(path: string): AuthStore {
         data.emails[user.email] = user.id;
         data.users[user.id] = user;
       }),
+    claimNickname: (userId, nickname) =>
+      mutate((data) => {
+        const user = data.users[userId];
+        if (!user) throw new Error("USER_MISSING");
+        if (user.nickname && user.nickname !== nickname)
+          throw new Error("NICKNAME_LOCKED");
+        const key = "nickname:" + nickname;
+        if (data.docs[key] && data.docs[key] !== userId)
+          throw new Error("NICKNAME_TAKEN");
+        data.docs[key] = userId;
+        user.nickname = nickname;
+        user.name = nickname;
+        return { ...user };
+      }),
     updateUser: (user) =>
       mutate((data) => {
-        data.users[user.id] = user;
+        const current = data.users[user.id];
+        data.users[user.id] = {
+          ...user,
+          ...(current?.nickname
+            ? { nickname: current.nickname, name: current.nickname }
+            : {}),
+        };
         data.emails[user.email] = user.id;
       }),
     putSession: (token, session) =>
