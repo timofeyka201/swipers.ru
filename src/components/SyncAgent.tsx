@@ -30,6 +30,7 @@ export default function SyncAgent() {
             name?: string;
             createdAt: string;
             emailVerified?: boolean;
+            nickname?: string;
           } | null;
         }) => {
           if (!alive) return;
@@ -39,7 +40,11 @@ export default function SyncAgent() {
             // этого устройства — слияние, иначе локальные данные затрут аккаунт.
             const isSame = current?.id === d.user.id;
             // Запись обновляем всегда: подтвердить почту могли в другой вкладке.
-            if (!isSame || current?.emailVerified !== d.user.emailVerified)
+            if (
+              !isSame ||
+              current?.emailVerified !== d.user.emailVerified ||
+              current?.nickname !== d.user.nickname
+            )
               setAccount(d.user);
             void (isSame ? pullProfile() : syncOnLogin());
           } else if (current) {
@@ -69,12 +74,10 @@ export default function SyncAgent() {
           source?: string;
         }) => {
           if (!alive || !d.rates || !Object.keys(d.rates).length) return;
-          useStore
-            .getState()
-            .setRates(d.rates, {
-              date: d.date ?? null,
-              source: d.source ?? "ЦБ РФ",
-            });
+          useStore.getState().setRates(d.rates, {
+            date: d.date ?? null,
+            source: d.source ?? "ЦБ РФ",
+          });
         },
       )
       .catch(() => undefined);
