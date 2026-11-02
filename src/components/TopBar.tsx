@@ -19,18 +19,7 @@ type Props = {
   onClearQuery: () => void;
 };
 
-/**
- * Шапка ленты: строка поиска и быстрые фильтры — и ничего больше.
- *
- * Раньше здесь жили кольцо дневной цели, серия лайков, кнопка фильтров и
- * кнопка настроек. Значок с ползунками приходилось узнавать: по нему не
- * видно, что внутри в том числе и поиск. Теперь на том же месте строка
- * поиска — она говорит о себе сама, а открывает ту же шторку: поиск и
- * фильтры применяются одним нажатием «Показать», и разделять их незачем.
- *
- * Счётчики переехали в «Профиль», настройки — туда же. Шапка стала на
- * полсотни пикселей ниже, и всё это досталось карточке.
- */
+/** Шапка ленты: поиск и быстрые фильтры. */
 export default function TopBar({
   groups,
   group,
@@ -44,8 +33,10 @@ export default function TopBar({
   onClearQuery,
 }: Props) {
   const filterCount = active.length + extraFilters;
-  const chip = "chip shrink-0 whitespace-nowrap rounded-full px-4 text-[13px] font-semibold transition-colors";
-  const off = "bg-[var(--color-surface)] text-[var(--color-ink-soft)] soft-shadow active:bg-[var(--color-surface-2)]";
+  const chip =
+    "chip shrink-0 whitespace-nowrap rounded-full px-4 text-[13px] font-semibold transition-colors";
+  const off =
+    "bg-[var(--color-surface)] text-[var(--color-ink-soft)] soft-shadow active:bg-[var(--color-surface-2)]";
   const on = "bg-[var(--color-ink)] text-[var(--color-surface)]";
 
   return (
@@ -55,13 +46,19 @@ export default function TopBar({
         <button
           type="button"
           onClick={onOpenFilters}
-          aria-label={query ? `Поиск: ${query}. Открыть поиск и фильтры` : "Поиск и фильтры"}
+          aria-label={
+            query
+              ? `Поиск: ${query}. Открыть поиск и фильтры`
+              : "Поиск и фильтры"
+          }
           className="soft-shadow flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-[var(--color-surface)] pl-4 pr-2 text-left"
         >
           <IconSearch className="h-[18px] w-[18px] shrink-0 text-[var(--color-muted)]" />
           <span
             className={`min-w-0 flex-1 truncate text-[15px] ${
-              query ? "font-semibold text-[var(--color-ink)]" : "font-medium text-[var(--color-muted)]"
+              query
+                ? "font-semibold text-[var(--color-ink)]"
+                : "font-medium text-[var(--color-muted)]"
             }`}
           >
             {query || "Поиск по витрине"}
@@ -137,7 +134,6 @@ export default function TopBar({
           )}
         </div>
       )}
-
     </header>
   );
 }
