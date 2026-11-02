@@ -12,7 +12,7 @@ users:
   - name: swiper
     groups: [sudo]
     shell: /bin/bash
-    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    sudo: ["ALL=(root) NOPASSWD:/usr/bin/systemctl restart swiper"]
     ssh_authorized_keys:
       - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCPl7A+lkbcXL3ZJKwkkEFM25wvMa7pY+ysRc8aDA7ObfRcAJb2gs2UULZJOQoMtTvSP6lU7SNlZX7E8dkEA5UHan+wETg1nyDaI5+G3iKjHuJgDsF0QkiopFv6xUlGGhQJxbIP9Rz7iJ5QFLxzACPXzSghQ7USMRZf5ozbJrZazwSxW2qy1FkGzb6RuWlQKqJys9qoUlVWWspjukZHYGSSjM0pilef0Nc9DvqpDVdryxAiSaV95QMtx4g0PewJSU33WUaqwSk/n1Nt+28PapaS7pSXfPUxlqhy7RVMyJkbyPoDLnV6xA1zm7J7A1XiwGoVbusW2BgIcd57NFmancwX timycmorozov5795@gmail.com
 
@@ -80,7 +80,7 @@ write_files:
           proxy_set_header X-Real-IP $remote_addr;
           # По этому заголовку работает защита от перебора паролей:
           # без него все посетители выглядят как один.
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-For $remote_addr;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Host $host;
 
@@ -138,7 +138,7 @@ write_files:
           proxy_http_version 1.1;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
-          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-For $remote_addr;
           proxy_set_header X-Forwarded-Proto $scheme;
           proxy_set_header X-Forwarded-Host $host;
       }
@@ -151,14 +151,16 @@ write_files:
     permissions: "0755"
     content: |
       #!/bin/bash
-      set -e
+      set -euo pipefail
       export PATH=/usr/local/bin:/usr/bin:/bin
-      APP=/home/swiper/app
+      exec 9>/home/swiper/deploy.lock
+      flock -n 9 || { echo "Выкладка уже выполняется"; exit 1; }
+      APP=/home/swiper/releases/$(date +%Y%m%d%H%M%S)-$
       REPO=/home/swiper/repo.git
 
       echo "→ выкладываю код"
       mkdir -p "$APP"
-      git --work-tree="$APP" --git-dir="$REPO" checkout -f master
+      git --git-dir="$REPO" archive master | tar -x -C "$APP"
 
       cd "$APP"
       echo "→ ставлю зависимости (это долго)"
@@ -168,7 +170,25 @@ write_files:
       npm run build
 
       echo "→ перезапускаю службу"
+      LIVE=/home/swiper/app
+      if [ -d "$LIVE" ] && [ ! -L "$LIVE" ]; then
+        echo "Перенесите старый каталог app в releases и замените его символической ссылкой перед первой выкладкой"
+        exit 1
+      fi
+      PREVIOUS=$(readlink "$LIVE" || true)
+      ln -s "$APP" /home/swiper/app-next
+      mv -Tf /home/swiper/app-next "$LIVE"
       sudo systemctl restart swiper
+      sleep 3
+      if ! curl --fail --silent --max-time 15 http://127.0.0.1:3000/api/health >/dev/null; then
+        if [ -n "$PREVIOUS" ]; then
+          ln -s "$PREVIOUS" /home/swiper/app-rollback
+          mv -Tf /home/swiper/app-rollback "$LIVE"
+          sudo systemctl restart swiper
+        fi
+        echo "Проверка выкладки не прошла"
+        exit 1
+      fi
       echo "✓ готово"
 
   # ------------------------------------- обновление прямо с GitHub
@@ -179,7 +199,7 @@ write_files:
       set -e
       export PATH=/usr/local/bin:/usr/bin:/bin
       REPO=/home/swiper/repo.git
-      URL=https://github.com/timofeyka201/telegram-email-bot.git
+      URL=https://github.com/timofeyka201/swipers.ru.git
 
       echo "→ забираю свежий код с GitHub"
       # Ограничение по времени: некоторые российские хостинги до GitHub не
@@ -204,7 +224,11 @@ write_files:
 runcmd:
   # Сборка Next.js требует около 1,5 ГБ. На тарифах с 1 ГБ без свопа она
   # падает по памяти, поэтому добавляем его заранее — лишним не будет.
-  - [sh, -c, "test -f /swapfile || (fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab)"]
+  - [
+      sh,
+      -c,
+      "test -f /swapfile || (fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab)",
+    ]
 
   # Node 22 из NodeSource.
   - [sh, -c, "curl -fsSL https://deb.nodesource.com/setup_22.x | bash -"]
@@ -225,25 +249,53 @@ runcmd:
   # посмотреть, что там лежит) и чтение двух каталогов с картинками. Учётные
   # записи, снапшот каталога и всё остальное остаются недоступны.
   - [setfacl, -m, "u:www-data:x", /var/lib/swiper]
-  - [setfacl, -R, -m, "u:www-data:rX", /var/lib/swiper/images, /var/lib/swiper/uploads]
+  - [
+      setfacl,
+      -R,
+      -m,
+      "u:www-data:rX",
+      /var/lib/swiper/images,
+      /var/lib/swiper/uploads,
+    ]
   # То же самое для файлов, которые появятся позже: импортёр качает картинки,
   # люди прикладывают фотографии к желаниям.
-  - [setfacl, -R, -d, -m, "u:www-data:rX", /var/lib/swiper/images, /var/lib/swiper/uploads]
+  - [
+      setfacl,
+      -R,
+      -d,
+      -m,
+      "u:www-data:rX",
+      /var/lib/swiper/images,
+      /var/lib/swiper/uploads,
+    ]
 
   # Приёмник кода: сюда вы пушите с ноутбука, минуя GitHub.
   - [sudo, -u, swiper, git, init, --bare, /home/swiper/repo.git]
-  - [cp, /usr/local/bin/swiper-post-receive, /home/swiper/repo.git/hooks/post-receive]
+  - [
+      cp,
+      /usr/local/bin/swiper-post-receive,
+      /home/swiper/repo.git/hooks/post-receive,
+    ]
   - [chmod, "+x", /home/swiper/repo.git/hooks/post-receive]
   - [chown, -R, "swiper:swiper", /home/swiper/repo.git]
 
   # Настройки приложения. Адрес определяем сам — по нему строятся ссылки в
   # письмах и решается, ставить ли куке флаг Secure.
-  - [sh, -c, "IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'); [ -n \"$IP\" ] || IP=$(hostname -I | awk '{print $1}'); printf 'APP_URL=http://%s\\nAUTH_FILE=/var/lib/swiper/auth.json\\nNODE_ENV=production\\n' \"$IP\" > /home/swiper/.env.production"]
+  - [
+      sh,
+      -c,
+      "IP=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}'); [ -n \"$IP\" ] || IP=$(hostname -I | awk '{print $1}'); printf 'APP_URL=http://%s\\nAUTH_FILE=/var/lib/swiper/auth.json\\nNODE_ENV=production\\n' \"$IP\" > /home/swiper/.env.production",
+    ]
   - [chown, "swiper:swiper", /home/swiper/.env.production]
   - [chmod, "600", /home/swiper/.env.production]
 
   # nginx
-  - [ln, -sf, /etc/nginx/sites-available/swiper, /etc/nginx/sites-enabled/swiper]
+  - [
+      ln,
+      -sf,
+      /etc/nginx/sites-available/swiper,
+      /etc/nginx/sites-enabled/swiper,
+    ]
   - [rm, -f, /etc/nginx/sites-enabled/default]
   - [nginx, -t]
   - [systemctl, reload, nginx]
@@ -262,7 +314,11 @@ runcmd:
   # GitHub с этого хостинга недоступен, сервер остаётся готовым принять код
   # с ноутбука командой git push server master.
   - [sh, -c, "node -v > /var/log/swiper-init.log 2>&1"]
-  - [sh, -c, "sudo -u swiper /usr/local/bin/swiper-update >> /var/log/swiper-init.log 2>&1 || echo '✗ первая выкладка не удалась, смотрите вывод выше' >> /var/log/swiper-init.log"]
+  - [
+      sh,
+      -c,
+      "sudo -u swiper /usr/local/bin/swiper-update >> /var/log/swiper-init.log 2>&1 || echo '✗ первая выкладка не удалась, смотрите вывод выше' >> /var/log/swiper-init.log",
+    ]
   - [sh, -c, "echo 'cloud-init завершён' >> /var/log/swiper-init.log"]
 
 final_message: "Сервер готов. Дальше — git push server master с ноутбука."
