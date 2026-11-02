@@ -17,7 +17,11 @@ export async function GET() {
   } catch (e) {
     console.error("Проверка сессии: хранилище недоступно —", e);
     return NextResponse.json(
-      { user: null, warning: "Хранилище учётных записей не отвечает. Подробности: /api/auth/health" },
+      {
+        user: null,
+        warning:
+          "Хранилище учётных записей не отвечает. Подробности: /api/auth/health",
+      },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
