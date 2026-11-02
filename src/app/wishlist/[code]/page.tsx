@@ -1,237 +1,204 @@
 "use client";
-
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import AuthSheet from "@/components/AuthSheet";
 import Img from "@/components/Img";
-import { IconArrowLeft, IconCheck, IconExternal, IconGift } from "@/components/Icons";
-import { toast } from "@/components/Toast";
-import { shopUrl } from "@/lib/shop";
+import AuthSheet from "@/components/AuthSheet";
+import ProductSheet from "@/components/ProductSheet";
+import { BuyButton, Empty } from "@/components/Ui";
 import { useHydrated, useStore } from "@/lib/store";
-import { formatNative, formatRub, needsConversion, plural } from "@/lib/money";
-import { loadFriendWishlist, toggleReserve } from "@/lib/wish/client";
-import { formatCode, normalizeCode, type FriendItem, type FriendView } from "@/lib/wish/types";
-import TrackView from "@/components/TrackView";
-
-/**
- * Чужой список желаний. Главное здесь — бронь: она существует ровно для того,
- * чтобы двое не подарили одно и то же, и поэтому видна всем гостям сразу.
- * Владельцу её не показывают нигде и никогда.
- */
-export default function FriendWishlistPage() {
+import {
+  loadFriendWishlist,
+  loadMyWishlist,
+  toggleReserve,
+} from "@/lib/wish/client";
+import {
+  formatCode,
+  normalizeCode,
+  type FriendItem,
+  type FriendView,
+} from "@/lib/wish/types";
+import { formatRub } from "@/lib/money";
+import type { Product } from "@/lib/types";
+const productOf = (item: FriendItem): Product => ({
+  ...item.product,
+  id: item.product?.id ?? item.id,
+  url: item.url ?? item.product?.url ?? "",
+  title: item.title,
+  images: item.image ? [item.image] : (item.product?.images ?? []),
+  price: item.price,
+  currency: item.currency,
+  tiers: item.product?.tiers ?? [],
+  attributes: item.product?.attributes ?? [],
+  skus: item.product?.skus ?? [],
+  reviews: item.product?.reviews ?? [],
+  source: item.product?.source ?? "custom",
+});
+export default function FriendWishlist() {
   const params = useParams<{ code: string }>();
-  const router = useRouter();
-  const hydrated = useHydrated();
+  const code = normalizeCode(params.code ?? "");
   const account = useStore((s) => s.account);
-
-  const code = normalizeCode(String(params.code ?? ""));
+  const rates = useStore((s) => s.rates);
+  const hydrated = useHydrated();
   const [view, setView] = useState<FriendView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [own, setOwn] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [authOpen, setAuthOpen] = useState(false);
-
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [auth, setAuth] = useState(false);
+  const [product, setProduct] = useState<Product | null>(null);
   const load = useCallback(async () => {
     if (!code) {
-      setError("Код состоит из шести букв и цифр: SW-K7QM4X");
+      setError("Ссылка на вишлист некорректна");
       setLoading(false);
       return;
     }
     setLoading(true);
     const result = await loadFriendWishlist(code);
-    setLoading(false);
     if (result.kind === "mine") {
-      router.replace("/wishlist");
-      return;
-    }
-    if (result.kind === "error") {
-      setError(result.message);
-      setView(null);
-      return;
-    }
-    setError(null);
-    setView(result.wishlist);
-  }, [code, router]);
-
-  // Перезагружаем и после входа: гостю кнопки брони не положены, вошедшему — да.
+      const mine = await loadMyWishlist();
+      if (mine) {
+        setView({
+          ...mine,
+          canReserve: false,
+          items: mine.items.map((i) => ({
+            ...i,
+            reserved: false,
+            mine: false,
+          })),
+        });
+        setOwn(true);
+      }
+    } else if (result.kind === "ok") {
+      setView(result.wishlist);
+      setOwn(false);
+      setError("");
+    } else setError(result.message);
+    setLoading(false);
+  }, [code]);
   useEffect(() => {
     if (hydrated) void load();
-  }, [hydrated, load, account]);
-
-  async function reserve(item: FriendItem) {
-    if (!code) return;
+  }, [hydrated, account, load]);
+  const reserve = async (item: FriendItem) => {
     if (!account) {
-      setAuthOpen(true);
+      setAuth(true);
       return;
     }
-    setBusyId(item.id);
-    const { wishlist, error: failure } = await toggleReserve(code, item.id, !item.mine);
-    setBusyId(null);
-    if (wishlist) setView(wishlist);
-    if (failure) toast(failure);
-    else toast(item.mine ? "Бронь снята" : "Забронировали — другие увидят, что подарок занят", item.mine ? "default" : "like");
-  }
-
-  if (!hydrated) return <div className="flex-1" />;
-
+    if (!code || busy || own) return;
+    setBusy(item.id);
+    setError("");
+    const result = await toggleReserve(code, item.id, !item.mine);
+    if (result.wishlist) setView(result.wishlist);
+    if (result.error) setError(result.error);
+    setBusy("");
+  };
   return (
-    <div className="flex flex-1 flex-col">
-      <TrackView kind="gift" />
-      <header className="safe-top sticky top-0 z-30 bg-[var(--color-bg)]/92 px-4 pb-3 pt-3 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <Link
-            href="/wishlist"
-            aria-label="К своему вишлисту"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)]"
-          >
-            <IconArrowLeft className="h-4 w-4" />
-          </Link>
-          <div className="min-w-0">
-            <h1 className="truncate font-display text-[22px] leading-tight">
-              {view?.title ?? "Вишлист"}
-            </h1>
-            <p className="truncate text-[12px] text-[var(--color-muted)]">
-              {view ? `${view.ownerName} · ${formatCode(view.code)}` : code ? formatCode(code) : ""}
-            </p>
-          </div>
-        </div>
-      </header>
-
-      <div className="flex flex-1 flex-col gap-3 p-4 pb-28">
+    <main className="ui-page">
+      <div className="ui-friend-heading">
+        <Link href="/" className="ui-mark">
+          S
+        </Link>
+        <span className="ui-label">
+          Вишлист · {code ? formatCode(code) : ""}
+        </span>
+      </div>
+      <div className="ui-page-body">
         {loading ? (
-          <p className="py-10 text-center text-[14px] text-[var(--color-muted)]">Загружаем…</p>
-        ) : error ? (
-          <div className="rounded-3xl bg-[var(--color-surface)] p-6 text-center">
-            <h2 className="font-display text-[17px] font-bold">Не открылось</h2>
-            <p className="mt-1.5 text-[13px] leading-snug text-[var(--color-muted)]">{error}</p>
-            <Link
-              href="/wishlist"
-              className="brand-gradient mt-4 inline-block rounded-full px-6 py-3 text-[14px] font-bold"
-            >
-              К своему вишлисту
+          <div className="ui-loader" />
+        ) : !view ? (
+          <Empty
+            title="Вишлист не открылся"
+            detail={error || "Владелец закрыл доступ к списку."}
+          >
+            <button className="ui-btn ui-dark" onClick={() => void load()}>
+              Попробовать снова
+            </button>
+            <Link className="ui-btn ui-soft" href="/">
+              Вернуться в Swiper
             </Link>
-          </div>
-        ) : !view ? null : (
+          </Empty>
+        ) : (
           <>
-            {view.note && (
-              <p className="rounded-3xl bg-[var(--color-surface)] p-4 text-[13px] leading-snug text-[var(--color-ink-soft)]">
-                {view.note}
-              </p>
-            )}
-
-            <p className="px-1 text-[12px] leading-snug text-[var(--color-muted)]">
-              {view.canReserve
-                ? `${view.items.length} ${plural(view.items.length, "желание", "желания", "желаний")}. Бронь видна другим гостям, но не владельцу списка.`
-                : "Войдите, чтобы забронировать подарок — тогда другие гости увидят, что он уже занят."}
+            <h1>{view.ownerName} мечтает о</h1>
+            <p className="ui-muted">
+              Отметьте подарок, чтобы никто не купил то же самое. Владелец не
+              узнает, кто и что выбрал.
             </p>
-
-            {view.items.length === 0 ? (
-              <p className="rounded-3xl bg-[var(--color-surface)] p-6 text-center text-[14px] text-[var(--color-muted)]">
-                Список пока пуст.
+            {own && (
+              <p className="ui-muted">
+                Ваш список глазами друга. Брони здесь скрыты от вас.
               </p>
-            ) : (
-              view.items.map((item) => (
-                <GiftCard
-                  key={item.id}
-                  item={item}
-                  canReserve={view.canReserve}
-                  busy={busyId === item.id}
-                  onReserve={() => reserve(item)}
-                />
-              ))
             )}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="ui-drop-grid">
+              {view.items.map((item) => (
+                <article key={item.id} className="ui-friend-item">
+                  <div className="ui-product-row">
+                    <button
+                      className="ui-row-image"
+                      aria-label={"Открыть " + item.title}
+                      onClick={() => setProduct(productOf(item))}
+                    >
+                      <Img
+                        className="ui-image"
+                        src={item.image}
+                        alt={item.title}
+                      />
+                    </button>
+                    <div className="ui-row-copy">
+                      <strong>{item.title}</strong>
+                      <span>
+                        {item.price !== undefined
+                          ? formatRub(item.price, item.currency, rates)
+                          : "Цена не указана"}
+                      </span>
+                      {item.note && <small>{item.note}</small>}
+                    </div>
+                    {item.reserved && !item.mine ? (
+                      <span className="ui-reserved-label">Уже дарят</span>
+                    ) : item.mine ? (
+                      <span className="ui-giving-label">Вы дарите это</span>
+                    ) : (
+                      <button
+                        className="ui-btn ui-dark ui-reserve-button"
+                        disabled={!!busy || own}
+                        onClick={() => void reserve(item)}
+                      >
+                        {busy === item.id ? "…" : "Подарю"}
+                      </button>
+                    )}
+                  </div>
+                  {item.mine && (
+                    <div className="ui-friend-actions">
+                      <BuyButton product={productOf(item)} from="gift" />
+                      <button
+                        className="ui-btn ui-soft"
+                        disabled={!!busy}
+                        onClick={() => void reserve(item)}
+                      >
+                        Отменить
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+            <section className="ui-wish-hero ui-friend-cta">
+              <h2>Соберите свой вишлист</h2>
+              <p>Пора мечтать о своём, а друзьям знать, что дарить.</p>
+              <Link className="ui-btn ui-lime" href="/wishlist">
+                Начать
+              </Link>
+            </section>
           </>
         )}
       </div>
-
-      <AuthSheet open={authOpen} onClose={() => setAuthOpen(false)} />
-    </div>
-  );
-}
-
-function GiftCard({
-  item,
-  canReserve,
-  busy,
-  onReserve,
-}: {
-  item: FriendItem;
-  canReserve: boolean;
-  busy: boolean;
-  onReserve: () => void;
-}) {
-  const rates = useStore((s) => s.rates);
-  const takenByOther = item.reserved && !item.mine;
-  /*
-   * Подарок покупают по той же партнёрской ссылке, что и всё остальное.
-   * Здесь стоял прямой адрес товара: друг уходил на AliExpress мимо нашего
-   * перехода, и покупка не засчитывалась ни комиссией, ни статистикой.
-   * У желания, добавленного руками, своя ссылка — её и оставляем.
-   */
-  const link = item.product ? shopUrl(item.product, "gift") : item.url;
-
-  return (
-    <div
-      className={`soft-shadow flex gap-3 rounded-3xl bg-[var(--color-surface)] p-3 ${takenByOther ? "opacity-70" : ""}`}
-    >
-      <Img
-        src={item.image}
-        alt={item.title}
-        className="h-[92px] w-[92px] shrink-0 rounded-2xl"
-        fallbackLabel={item.title.slice(0, 24)}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <p className="line-clamp-2 text-[14px] font-semibold leading-tight">{item.title}</p>
-        {item.price !== undefined && (
-          <p className="tnum mt-1 font-display text-[16px] font-bold leading-none">
-            {formatRub(item.price, item.currency, rates)}
-            {needsConversion(item.currency) && (
-              <span className="ml-1.5 text-[12px] font-medium text-[var(--color-muted)]">
-                {formatNative(item.price, item.currency)}
-              </span>
-            )}
-          </p>
-        )}
-        {item.note && (
-          <p className="mt-1 line-clamp-3 rounded-xl bg-[var(--color-surface-2)] px-2.5 py-1.5 text-[12px] leading-snug text-[var(--color-ink-soft)]">
-            {item.note}
-          </p>
-        )}
-
-        <div className="mt-auto flex items-center gap-1.5 pt-2">
-          {takenByOther ? (
-            <span className="rounded-xl bg-[var(--color-surface-2)] px-3 py-1.5 text-[12px] font-bold text-[var(--color-muted)]">
-              Занято · {item.reservedBy}
-            </span>
-          ) : (
-            <button
-              type="button"
-              disabled={busy || (!canReserve && item.mine)}
-              onClick={onReserve}
-              className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12px] font-bold disabled:opacity-60 ${
-                item.mine
-                  ? "bg-[var(--color-like-soft)] text-[var(--color-like)]"
-                  : "bg-[var(--color-brand)] on-accent"
-              }`}
-            >
-              {item.mine ? <IconCheck className="h-3.5 w-3.5" /> : <IconGift className="h-3.5 w-3.5" />}
-              {busy ? "…" : item.mine ? "Дарю я — снять" : "Беру на себя"}
-            </button>
-          )}
-          {link && (
-            <a
-              href={link}
-              target="_blank"
-              rel="noreferrer noopener"
-              aria-label="Открыть в магазине"
-              className="ml-auto flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-surface-2)] text-[var(--color-muted)]"
-            >
-              <IconExternal className="h-4 w-4" />
-            </a>
-          )}
-        </div>
-      </div>
-    </div>
+      <AuthSheet open={auth} onClose={() => setAuth(false)} />
+      <ProductSheet product={product} onClose={() => setProduct(null)} />
+    </main>
   );
 }
