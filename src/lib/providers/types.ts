@@ -10,6 +10,8 @@ export type Filters = {
   group?: string;
   categories?: string[];
   maxPrice?: number;
+  minPrice?: number;
+  priceCurrency?: "RUB";
   onlyDiscount?: boolean;
 };
 
@@ -63,12 +65,18 @@ export function encodeCursor(offset: number, round: number): string {
   return `${offset}.${round}`;
 }
 
-export function decodeCursor(cursor: string | null): { offset: number; round: number } {
+export function decodeCursor(cursor: string | null): {
+  offset: number;
+  round: number;
+} {
   if (!cursor) return { offset: 0, round: 0 };
   const [a, b] = cursor.split(".");
   const offset = Number(a);
   const round = Number(b);
-  return { offset: Number.isFinite(offset) ? offset : 0, round: Number.isFinite(round) ? round : 0 };
+  return {
+    offset: Number.isFinite(offset) ? offset : 0,
+    round: Number.isFinite(round) ? round : 0,
+  };
 }
 
 /** Детерминированный PRNG: один и тот же seed даёт один и тот же порядок. */

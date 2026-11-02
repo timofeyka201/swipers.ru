@@ -1,49 +1,49 @@
 "use client";
-
+import { useEffect, useRef, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef } from "react";
-import { IconX } from "./Icons";
-
-/**
- * Шторка снизу — общая основа для фильтров, настроек и прочих панелей.
- * Собрана один раз, чтобы поведение (затемнение, Escape, блокировка прокрутки,
- * безопасная зона) везде совпадало.
- */
+import { IconArrowLeft, IconX } from "./Icons";
 export default function Sheet({
   open,
   title,
   onClose,
   children,
   footer,
+  fullScreen = false,
+  hideHeader = false,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  fullScreen?: boolean;
+  hideHeader?: boolean;
 }) {
-  const dialog = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
-    const focusTimer = setTimeout(
+    document.body.style.overflow = "hidden";
+    const timer = setTimeout(
       () =>
-        dialog.current
-          ?.querySelector<HTMLElement>("input,button,[tabindex]")
+        ref.current
+          ?.querySelector<HTMLElement>("input,button,a[href]")
           ?.focus(),
-      0,
+      50,
     );
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close.current();
       if (e.key === "Tab") {
-        const elements = Array.from(
-          dialog.current?.querySelectorAll<HTMLElement>(
-            'button:not([disabled]),input:not([disabled]),a[href],select,textarea,[tabindex="0"]',
+        const fields = Array.from(
+          ref.current?.querySelectorAll<HTMLElement>(
+            'button:not([disabled]),input:not([disabled]),select,textarea,a[href],[tabindex="0"]',
           ) ?? [],
         );
-        const first = elements[0],
-          last = elements.at(-1);
+        const first = fields[0],
+          last = fields.at(-1);
         if (e.shiftKey && document.activeElement === first) {
           e.preventDefault();
           last?.focus();
@@ -53,59 +53,62 @@ export default function Sheet({
         }
       }
     };
-    window.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handler);
     return () => {
-      window.removeEventListener("keydown", onKey);
-      clearTimeout(focusTimer);
+      clearTimeout(timer);
+      window.removeEventListener("keydown", handler);
       document.body.style.overflow = overflow;
       previous?.focus();
     };
-  }, [open, onClose]);
-
+  }, [open]);
   return (
     <AnimatePresence>
       {open && (
         <motion.div
+          className={"ui-overlay " + (fullScreen ? "ui-overlay-full" : "")}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[70] flex items-end bg-black/45 backdrop-blur-[2px]"
           onClick={onClose}
         >
-          <motion.div
-            ref={dialog}
+          <motion.section
+            ref={ref}
             role="dialog"
             aria-modal="true"
-            aria-label={title}
-            initial={{ y: "100%" }}
+            aria-label={title || "Вход по почте"}
+            className={"ui-modal " + (fullScreen ? "ui-modal-full" : "")}
+            initial={{ y: fullScreen ? 20 : 120 }}
             animate={{ y: 0 }}
-            exit={{ y: "100%" }}
-            transition={{ type: "spring", stiffness: 380, damping: 38 }}
+            exit={{ y: 80 }}
             onClick={(e) => e.stopPropagation()}
-            className="mx-auto flex max-h-[88dvh] w-full max-w-[480px] flex-col rounded-t-[28px] bg-[var(--color-bg)] pb-[env(safe-area-inset-bottom)]"
           >
-            <div className="flex shrink-0 items-center justify-between px-5 pb-2 pt-4">
-              <span className="absolute left-1/2 top-2 h-1 w-10 -translate-x-1/2 rounded-full bg-[var(--color-line)]" />
-              <h2 className="font-display text-[18px] font-bold">{title}</h2>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Закрыть"
-                className="tap -mr-1.5 flex items-center justify-center rounded-full bg-[var(--color-surface)] text-[var(--color-muted)] soft-shadow"
-              >
-                <IconX className="h-[18px] w-[18px]" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
-              {children}
-            </div>
-            {footer && (
-              <div className="shrink-0 border-t border-[var(--color-line)] px-5 py-3">
-                {footer}
+            {!fullScreen && <span className="ui-modal-handle" />}
+            {!hideHeader && (
+              <div className="ui-modal-header">
+                {fullScreen && (
+                  <button
+                    className="ui-round"
+                    onClick={onClose}
+                    aria-label="Назад"
+                  >
+                    <IconArrowLeft />
+                  </button>
+                )}
+                {title ? <h2>{title}</h2> : <span className="flex-1" />}
+                {!fullScreen && (
+                  <button
+                    className="ui-round"
+                    onClick={onClose}
+                    aria-label="Закрыть"
+                  >
+                    <IconX />
+                  </button>
+                )}
               </div>
             )}
-          </motion.div>
+            <div className="ui-modal-body">{children}</div>
+            {footer && <div className="ui-modal-footer">{footer}</div>}
+          </motion.section>
         </motion.div>
       )}
     </AnimatePresence>

@@ -32,7 +32,17 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
 
 /** Товары из ленты, лежащие в серверном списке, — для локальной копии. */
 const productsOf = (view: OwnerView): Product[] =>
-  view.items.map((i) => i.product).filter((p): p is Product => !!p);
+  view.items
+    .filter((i) => !!i.product)
+    .map((i) => ({
+      ...i.product!,
+      title: i.title,
+      price: i.price,
+      currency: i.currency,
+      url: i.url ?? i.product!.url,
+      images: i.image ? [i.image] : i.product!.images,
+      description: i.note ?? i.product!.description,
+    }));
 
 /** Ответ сервера — истина: приводим к нему и копию, и счётчик в меню. */
 function apply(view: OwnerView): OwnerView {

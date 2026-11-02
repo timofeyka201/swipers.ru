@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import BottomNav from "@/components/BottomNav";
+import "./redesign.css";
+import PurchasePrompt from "@/components/PurchasePrompt";
 import ToastHost from "@/components/Toast";
 import SyncAgent from "@/components/SyncAgent";
 import ServiceWorker from "@/components/ServiceWorker";
@@ -8,7 +9,7 @@ import ServiceWorker from "@/components/ServiceWorker";
 export const metadata: Metadata = {
   title: "Swiper — свайп-витрина товаров",
   description:
-    "Листайте товары как ленту знакомств: вправо — нравится, влево — мимо, вверх — сразу в корзину. Карточки с фото, характеристиками и отзывами, избранное и корзина.",
+    "Листайте товары как ленту знакомств: вправо — нравится, влево — мимо, вверх — купить у продавца. Карточки с фото, характеристиками и отзывами, избранное и корзина.",
   applicationName: "Swiper",
   // capable убирает интерфейс Safari, когда приложение открыто с домашнего
   // экрана. statusBarStyle оставлен default: он не даёт содержимому уехать
@@ -30,20 +31,18 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Swiper — свайп-витрина товаров",
-    description: "Вправо — нравится, влево — мимо, вверх — в корзину.",
+    description: "Вправо — нравится, влево — мимо, вверх — купить у продавца.",
     type: "website",
   },
 };
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#eceef2" },
+    { media: "(prefers-color-scheme: light)", color: "#f3f3f5" },
     { media: "(prefers-color-scheme: dark)", color: "#111215" },
   ],
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   viewportFit: "cover",
 };
 
@@ -58,23 +57,31 @@ try {
 } catch (e) {}
 `;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ru" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin=""
+        />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Onest:wght@400;500;600;700;800&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@700;800&display=swap"
         />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       <body>
         <div className="app-shell flex min-h-[100dvh] flex-col">
-          <main className="flex flex-1 flex-col">{children}</main>
-          <BottomNav />
+          <div className="flex flex-1 flex-col">{children}</div>
         </div>
+        <PurchasePrompt />
         <ToastHost />
         <SyncAgent />
         <ServiceWorker />

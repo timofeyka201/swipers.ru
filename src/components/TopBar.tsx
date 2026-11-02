@@ -1,137 +1,112 @@
 "use client";
-
-import { IconSearch, IconSliders, IconX } from "./Icons";
+import Link from "next/link";
+import { IconUndo, IconSearch, IconHeart, IconSliders, IconX } from "./Icons";
+import { Avatar } from "./Ui";
+import { useStore } from "@/lib/store";
 import type { GroupFacet } from "@/lib/providers/types";
-
 type Props = {
-  /** разделы витрины — верхний уровень строки фильтров */
   groups: GroupFacet[];
-  /** выбранный раздел или null — тогда в строке сами разделы */
   group: string | null;
-  /** категории выбранного раздела, а без раздела — самые полные вообще */
   categories: string[];
   active: string[];
   extraFilters: number;
   query: string;
-  onPickGroup: (group: string | null) => void;
-  onToggleCategory: (category: string) => void;
+  onPickGroup: (g: string | null) => void;
+  onToggleCategory: (c: string) => void;
   onOpenFilters: () => void;
   onClearQuery: () => void;
+  onUndo?: () => void;
+  canUndo?: boolean;
 };
-
-/** Шапка ленты: поиск и быстрые фильтры. */
-export default function TopBar({
-  groups,
-  group,
-  categories,
-  active,
-  extraFilters,
-  query,
-  onPickGroup,
-  onToggleCategory,
-  onOpenFilters,
-  onClearQuery,
-}: Props) {
-  const filterCount = active.length + extraFilters;
-  const chip =
-    "chip shrink-0 whitespace-nowrap rounded-full px-4 text-[13px] font-semibold transition-colors";
-  const off =
-    "bg-[var(--color-surface)] text-[var(--color-ink-soft)] soft-shadow active:bg-[var(--color-surface-2)]";
-  const on = "bg-[var(--color-ink)] text-[var(--color-surface)]";
-
+export default function TopBar(p: Props) {
+  const liked = useStore((s) => s.liked.length);
+  const undo = useStore((s) => s.undo);
+  const canUndo = useStore((s) => s.history.length > 0);
   return (
-    <header className="safe-top sticky top-0 z-30 min-w-0 bg-[var(--color-bg)]/92 backdrop-blur-md">
-      <div className="flex items-center gap-2 px-4 pb-2.5 pt-2.5">
-        {/* Поле только по виду: ввод живёт в шторке, где рядом цена и скидки. */}
-        <button
-          type="button"
-          onClick={onOpenFilters}
-          aria-label={
-            query
-              ? `Поиск: ${query}. Открыть поиск и фильтры`
-              : "Поиск и фильтры"
-          }
-          className="soft-shadow flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-full bg-[var(--color-surface)] pl-4 pr-2 text-left"
-        >
-          <IconSearch className="h-[18px] w-[18px] shrink-0 text-[var(--color-muted)]" />
-          <span
-            className={`min-w-0 flex-1 truncate text-[15px] ${
-              query
-                ? "font-semibold text-[var(--color-ink)]"
-                : "font-medium text-[var(--color-muted)]"
-            }`}
-          >
-            {query || "Поиск по витрине"}
-          </span>
-          {filterCount > 0 && (
-            <span className="tnum on-accent flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-[var(--color-brand)] px-1.5 text-[12px] font-extrabold">
-              {filterCount}
-            </span>
-          )}
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)]">
-            <IconSliders className="h-[18px] w-[18px]" />
-          </span>
-        </button>
-
-        {query && (
-          // Быстрый сброс: вернуться ко всей витрине — частое желание, и ради
-          // него не стоит открывать шторку.
-          <button
-            type="button"
-            onClick={onClearQuery}
-            aria-label="Сбросить поиск"
-            className="soft-shadow flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface)] text-[var(--color-muted)]"
-          >
-            <IconX className="h-[18px] w-[18px]" />
-          </button>
-        )}
-      </div>
-
-      {/*
-        Строка фильтров двухуровневая, но по-прежнему одна: разделов
-        одиннадцать, а категорий три с лишним десятка, и плоским списком они
-        превращались в свиток, где «Купальники» надо искать скроллом.
-        Выбранный раздел занимает первый чип и снимается тем же нажатием,
-        поэтому высота шапки не выросла ни на пиксель — а она уже отдана
-        карточке.
-      */}
-      {(group ? categories.length > 0 : groups.length > 0) && (
-        <div className="no-scrollbar flex w-full min-w-0 items-center gap-2.5 overflow-x-auto px-4 pb-2.5">
-          {group ? (
-            <>
-              <button
-                type="button"
-                onClick={() => onPickGroup(null)}
-                aria-label={`Раздел «${group}». Вернуться ко всем разделам`}
-                className={`${chip} ${on} flex items-center gap-1.5 pr-3`}
-              >
-                {group}
-                <IconX className="h-3.5 w-3.5" />
-              </button>
-              {categories.slice(0, 14).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => onToggleCategory(c)}
-                  aria-pressed={active.includes(c)}
-                  className={`${chip} ${active.includes(c) ? on : off}`}
-                >
-                  {c}
-                </button>
-              ))}
-            </>
+    <header className="ui-feed-header safe-top">
+      <div className="ui-feed-title">
+        <h1>
+          {p.query ? (
+            <button className="ui-query" onClick={p.onOpenFilters}>
+              <IconSearch />
+              <span>{p.query}</span>
+            </button>
           ) : (
-            groups.map((g) => (
-              <button
-                key={g.title}
-                type="button"
-                onClick={() => onPickGroup(g.title)}
-                className={`${chip} ${off}`}
-              >
-                {g.title}
-              </button>
-            ))
+            "Для вас"
           )}
+        </h1>
+        <button
+          className="ui-round"
+          onClick={p.onUndo ?? undo}
+          disabled={!(p.canUndo ?? canUndo)}
+          aria-label="Вернуть карточку"
+        >
+          <IconUndo />
+        </button>
+        <button
+          className="ui-round"
+          onClick={p.onOpenFilters}
+          aria-label="Поиск"
+        >
+          <IconSearch />
+        </button>
+        <Link
+          className="ui-round ui-saved-heart"
+          href="/likes"
+          aria-label={"Сохранённое, " + liked + " товаров"}
+        >
+          <IconHeart />
+          {liked > 0 && <span>{liked}</span>}
+        </Link>
+        <Avatar />
+      </div>
+      <div className="ui-chips no-scrollbar">
+        <button
+          className="ui-chip"
+          aria-label="Фильтры"
+          onClick={p.onOpenFilters}
+        >
+          <IconSliders />
+        </button>
+        <button
+          className={
+            "ui-chip " + (!p.group && !p.active.length ? "is-active" : "")
+          }
+          onClick={() => {
+            p.onPickGroup(null);
+          }}
+        >
+          Все
+        </button>
+        {p.groups.map((g) => (
+          <button
+            key={g.title}
+            className={"ui-chip " + (p.group === g.title ? "is-active" : "")}
+            onClick={() => p.onPickGroup(p.group === g.title ? null : g.title)}
+          >
+            {g.title}
+          </button>
+        ))}
+      </div>
+      {p.group && (
+        <div className="ui-chips ui-subchips no-scrollbar">
+          {p.categories.map((c) => (
+            <button
+              key={c}
+              className={"ui-chip " + (p.active.includes(c) ? "is-active" : "")}
+              onClick={() => p.onToggleCategory(c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+      {p.query && (
+        <div className="ui-active-filters">
+          <span>Результаты по запросу</span>
+          <button onClick={p.onClearQuery} aria-label="Сбросить поиск">
+            <IconX />
+          </button>
         </div>
       )}
     </header>

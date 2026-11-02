@@ -4,6 +4,8 @@ export function cleanProfile(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of [
+    "purchases",
+    "priceAlerts",
     "liked",
     "wishlist",
     "cart",

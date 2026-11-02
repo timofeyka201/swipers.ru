@@ -45,30 +45,77 @@ export function loadNextPage(): Promise<FeedResult> {
       for (let tries = 0; tries < MAX_TRIES; tries++) {
         // Состояние перечитываем на каждом заходе: курсор сдвинулся, да и
         // человек мог успеть свайпнуть.
-        const { provider, query, cursor, seed, filters, taste, rejected, seen, rates, appendPage } =
-          useStore.getState();
+        const {
+          provider,
+          query,
+          cursor,
+          seed,
+          filters,
+          taste,
+          rejected,
+          seen,
+          rates,
+          appendPage,
+        } = useStore.getState();
         // Исключаем всё, что уже показывали: и отвергнутое, и просто
         // просмотренное. Иначе после перезапуска сессии витрина начинает
         // предлагать по второму разу то, что человек уже видел.
         // Суффикс круга отбрасываем: исключать надо товар, а не карточку.
-        const hint = toHint(taste, [...new Set([...seen, ...rejected].map(baseId))], rates);
+        const hint = toHint(
+          taste,
+          [...new Set([...seen, ...rejected].map(baseId))],
+          rates,
+        );
 
         const res = await fetch("/api/feed", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, query, cursor, seed, filters, hint }),
+          body: JSON.stringify({
+            provider,
+            query,
+            cursor,
+            seed,
+            filters,
+            hint,
+          }),
         });
-        const data = (await res.json()) as FeedPage & { error?: string; problems?: string[] };
+        const current = useStore.getState();
+        if (
+          current.query !== query ||
+          current.seed !== seed ||
+          JSON.stringify(current.filters) !== JSON.stringify(filters)
+        )
+          return { ok: true };
+        const data = (await res.json()) as FeedPage & {
+          error?: string;
+          problems?: string[];
+        };
         // Пустая выдача по запросу — это ответ поиска, а не сбой источника.
-        if (data.noMore) return { ok: true, noMore: true, total: data.total ?? 0 };
+        if (data.noMore)
+          return { ok: true, noMore: true, total: data.total ?? 0 };
         if (!res.ok || !data.products?.length) {
-          const detail = data.problems?.length ? ` (${data.problems.join("; ")})` : "";
-          return { ok: false, error: (data.error || "Источник не ответил") + detail };
+          const detail = data.problems?.length
+            ? ` (${data.problems.join("; ")})`
+            : "";
+          return {
+            ok: false,
+            error: (data.error || "Источник не ответил") + detail,
+          };
         }
 
         const before = useStore.getState().deck.length;
-        appendPage(data.products, data.cursor, data.provider, data.providerLabel);
-        last = { ok: true, total: data.total, loose: data.loose, tries: tries + 1 };
+        appendPage(
+          data.products,
+          data.cursor,
+          data.provider,
+          data.providerLabel,
+        );
+        last = {
+          ok: true,
+          total: data.total,
+          loose: data.loose,
+          tries: tries + 1,
+        };
         // Страница целиком из уже виденного — колода не выросла, идём дальше.
         if (useStore.getState().deck.length > before) return last;
       }

@@ -29,7 +29,13 @@ export type Taste = {
   decayedAt?: number;
 };
 
-export const emptyTaste = (): Taste => ({ picked: [], categories: {}, brands: {}, tags: {}, reasons: {} });
+export const emptyTaste = (): Taste => ({
+  picked: [],
+  categories: {},
+  brands: {},
+  tags: {},
+  reasons: {},
+});
 
 /**
  * Затухание: вкус без подтверждения тает на 10% каждые двое суток.
@@ -83,12 +89,16 @@ export const REJECT_REASONS = [
   { id: "look", label: "Не нравится внешне" },
   { id: "quality", label: "Сомневаюсь в качестве" },
   { id: "have", label: "Уже есть такое" },
-  { id: "size", label: "Нет моего размера" },
 ] as const;
 
 export type RejectReason = (typeof REJECT_REASONS)[number]["id"];
 
-const bump = (map: Record<string, number>, key: string | undefined, delta: number, limit = 8) => {
+const bump = (
+  map: Record<string, number>,
+  key: string | undefined,
+  delta: number,
+  limit = 8,
+) => {
   if (!key) return;
   map[key] = Math.max(-limit, Math.min(limit, (map[key] ?? 0) + delta));
 };
@@ -102,7 +112,11 @@ const TAG_SHARE = 0.45;
 /** Потолок веса метки. Ниже, чем у категории: сигнал всё-таки косвенный. */
 const TAG_LIMIT = 4;
 
-const bumpTags = (map: Record<string, number>, tags: string[] | undefined, delta: number) => {
+const bumpTags = (
+  map: Record<string, number>,
+  tags: string[] | undefined,
+  delta: number,
+) => {
   for (const tag of tags ?? []) bump(map, tag, delta * TAG_SHARE, TAG_LIMIT);
 };
 
@@ -120,7 +134,11 @@ const draft = (taste: Taste): Taste & { tags: Record<string, number> } => ({
  * Свайп влево — явный отказ, и весит он больше лайка: человеку проще
  * пролистнуть что угодно, чем осознанно отвергнуть.
  */
-export function learn(taste: Taste, product: Product, decision: "like" | "dislike" | "super"): Taste {
+export function learn(
+  taste: Taste,
+  product: Product,
+  decision: "like" | "dislike" | "super",
+): Taste {
   const next = draft(taste);
   const weight = decision === "super" ? 2 : decision === "like" ? 1 : -1.4;
   bump(next.categories, product.category, weight);
@@ -138,7 +156,11 @@ export function learn(taste: Taste, product: Product, decision: "like" | "dislik
  * ±8) точность всё равно теряется: сколько было отброшено ограничителем, уже
  * не узнать.
  */
-export function unlearn(taste: Taste, product: Product, decision: "like" | "dislike" | "super"): Taste {
+export function unlearn(
+  taste: Taste,
+  product: Product,
+  decision: "like" | "dislike" | "super",
+): Taste {
   const next = draft(taste);
   const weight = -(decision === "super" ? 2 : decision === "like" ? 1 : -1.4);
   bump(next.categories, product.category, weight);
@@ -163,7 +185,12 @@ export function learnVisit(taste: Taste, product: Product): Taste {
 }
 
 /** Причина отказа уточняет профиль сильнее, чем сам свайп. */
-export function learnReason(taste: Taste, product: Product, reason: RejectReason, priceRub?: number): Taste {
+export function learnReason(
+  taste: Taste,
+  product: Product,
+  reason: RejectReason,
+  priceRub?: number,
+): Taste {
   const next = draft(taste);
   next.reasons[reason] = (next.reasons[reason] ?? 0) + 1;
 
@@ -176,14 +203,19 @@ export function learnReason(taste: Taste, product: Product, reason: RejectReason
      * розовые стразы, а метки сезона и повода тут вовсе ни при чём.
      */
     for (const tag of product.tags ?? []) {
-      if (tag.startsWith("цвет:") || tag.startsWith("стиль:")) bump(next.tags, tag, -1, TAG_LIMIT);
-      else if (tag.startsWith("материал:")) bump(next.tags, tag, -0.5, TAG_LIMIT);
+      if (tag.startsWith("цвет:") || tag.startsWith("стиль:"))
+        bump(next.tags, tag, -1, TAG_LIMIT);
+      else if (tag.startsWith("материал:"))
+        bump(next.tags, tag, -0.5, TAG_LIMIT);
     }
   }
   if (reason === "quality") bump(next.brands, product.brand, -2);
   // «Дорого» — не про товар, а про планку: опускаем бюджет к этой цене.
   if (reason === "price" && priceRub !== undefined) {
-    next.budget = next.budget === undefined ? priceRub * 0.8 : Math.min(next.budget, priceRub * 0.85);
+    next.budget =
+      next.budget === undefined
+        ? priceRub * 0.8
+        : Math.min(next.budget, priceRub * 0.85);
   }
   return next;
 }
@@ -200,7 +232,11 @@ export type TasteHint = {
   exclude?: string[];
 };
 
-export function toHint(taste: Taste, excludeIds: string[], rates?: Record<string, number>): TasteHint {
+export function toHint(
+  taste: Taste,
+  excludeIds: string[],
+  rates?: Record<string, number>,
+): TasteHint {
   const trim = (map: Record<string, number>) =>
     Object.fromEntries(
       Object.entries(map)
@@ -210,7 +246,7 @@ export function toHint(taste: Taste, excludeIds: string[], rates?: Record<string
     );
   return {
     picked: taste.picked.length ? taste.picked : undefined,
-    budget: taste.budget,
+    budget: taste.budget || undefined,
     rates,
     categories: trim(taste.categories),
     brands: trim(taste.brands),

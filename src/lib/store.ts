@@ -62,7 +62,10 @@ export type OrderMark = {
 const KEEP_ORDERS = 60;
 
 /** Что уезжает в облако при входе: всё личное, но не служебное. */
+export type PurchaseStatus = "opened" | "bought" | "dismissed";
 export type SyncedProfile = {
+  purchases: Record<string, PurchaseStatus>;
+  priceAlerts: boolean;
   liked: Product[];
   wishlist: Product[];
   cart: CartItem[];
@@ -88,13 +91,19 @@ export type PriceDrop = {
  * Как часто спрашивать причину отказа. Вопрос должен быть редким: он полезен
  * рекомендациям, но раздражает, если всплывает часто.
  */
-export const ASK_REASON_EVERY = 200;
+export const ASK_REASON_EVERY = 50;
 
 /** Лента бесконечна, поэтому просмотренные карточки время от времени выбрасываем. */
 const KEEP_BEHIND = 12;
 const TRIM_AT = 60;
 
 type State = {
+  purchases: Record<string, PurchaseStatus>;
+  priceAlerts: boolean;
+  pendingPurchase: { id: string; at: number } | null;
+  setPurchaseStatus: (id: string, status: PurchaseStatus) => void;
+  setPendingPurchase: (value: { id: string; at: number } | null) => void;
+  setPriceAlerts: (value: boolean) => void;
   deck: Product[];
   index: number;
   liked: Product[];
@@ -192,6 +201,17 @@ function withoutGameState(saved: unknown): Partial<State> {
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
+      purchases: {},
+      priceAlerts: true,
+      pendingPurchase: null,
+      setPurchaseStatus: (id, status) =>
+        set((s) => ({
+          purchases: { ...s.purchases, [id]: status },
+          updatedAt: Date.now(),
+        })),
+      setPendingPurchase: (value) => set({ pendingPurchase: value }),
+      setPriceAlerts: (value) =>
+        set({ priceAlerts: value, updatedAt: Date.now() }),
       deck: [],
       index: 0,
       liked: [],
@@ -237,6 +257,8 @@ export const useStore = create<State>()(
                 wishlist: [],
                 cart: [],
                 orders: [],
+                purchases: {},
+                pendingPurchase: null,
                 watch: {},
                 rejected: [],
                 seen: [],
@@ -263,6 +285,8 @@ export const useStore = create<State>()(
           sizes: emptySizes(),
           person: emptyPerson(),
           orders: s.orders,
+          purchases: s.purchases,
+          priceAlerts: s.priceAlerts,
           watch: s.watch,
           rejected: s.rejected,
 
@@ -285,6 +309,8 @@ export const useStore = create<State>()(
           sizes: emptySizes(),
           person: emptyPerson(),
           orders: profile.orders ?? [],
+          purchases: profile.purchases ?? {},
+          priceAlerts: profile.priceAlerts ?? true,
           watch: profile.watch ?? {},
           rejected: profile.rejected ?? [],
 
@@ -485,7 +511,9 @@ export const useStore = create<State>()(
         set((s) => {
           const same =
             s.wishlist.length === products.length &&
-            s.wishlist.every((p, i) => p.id === products[i].id);
+            s.wishlist.every(
+              (p, i) => JSON.stringify(p) === JSON.stringify(products[i]),
+            );
           // Без этой проверки страница, обновляющая копию после каждой загрузки,
           // толкала бы синхронизацию профиля по кругу.
           if (same) return s;
@@ -709,6 +737,8 @@ export const useStore = create<State>()(
           // Имя и телефон остаются: это не «насвайпанное», а то, что человек
           // заполнил о себе, и кнопка обещает убрать другое.
           orders: [],
+          purchases: {},
+          pendingPurchase: null,
           watch: {},
           drops: [],
           dropsSeen: true,
@@ -717,10 +747,14 @@ export const useStore = create<State>()(
     }),
     {
       name: "swipe1688",
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       migrate: (state) => ({
         ...withoutGameState(state),
+        filters: {},
+        deck: [],
+        index: 0,
+        cursor: null,
         person: emptyPerson(),
         sizes: emptySizes(),
       }),
@@ -752,9 +786,12 @@ export const useStore = create<State>()(
         sizes: s.sizes,
         person: s.person,
         orders: s.orders,
+        purchases: s.purchases,
+        pendingPurchase: s.pendingPurchase,
+        priceAlerts: s.priceAlerts,
         watch: s.watch,
         wishTotal: s.wishTotal,
-        // Счётчик обязан пережить перезагрузку, иначе «раз в 200» не накопится.
+        // Счётчик обязан пережить перезагрузку, иначе «раз в 50» не накопится.
         dislikesSinceAsk: s.dislikesSinceAsk,
         account: s.account,
         updatedAt: s.updatedAt,
