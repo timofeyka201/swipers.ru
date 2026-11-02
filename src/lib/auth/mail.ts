@@ -1,4 +1,3 @@
-
 /**
  * Отправка писем через REST — по той же причине, что и Redis: на serverless
  * некуда держать SMTP-соединение. Resend взят как провайдер с бесплатным
@@ -10,25 +9,47 @@ const RESEND_BASE = process.env.RESEND_BASE || "https://api.resend.com";
 const SANDBOX_FROM = "Swiper <onboarding@resend.dev>";
 
 const clean = (raw: string | undefined): string | undefined =>
-  raw?.trim().replace(/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*/, "").trim().replace(/^["']|["']$/g, "").trim() || undefined;
+  raw
+    ?.trim()
+    .replace(/^[A-Za-z_][A-Za-z0-9_]*\s*=\s*/, "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .trim() || undefined;
 
 /** Что мешает отправлять письма, человеческим языком. null — всё на месте. */
 export function mailProblem(): string | null {
-  return clean(process.env.RESEND_API_KEY) ? null : "не задан RESEND_API_KEY — письма не отправляются";
+  return clean(process.env.RESEND_API_KEY)
+    ? null
+    : "не задан RESEND_API_KEY — письма не отправляются";
 }
 
 export type MailResult = { delivered: boolean; reason?: string };
 
-export async function sendMail(to: string, subject: string, html: string, text: string): Promise<MailResult> {
+export async function sendMail(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<MailResult> {
   const key = clean(process.env.RESEND_API_KEY);
   if (!key) return { delivered: false, reason: "RESEND_API_KEY не задан" };
 
   try {
     const res = await fetch(`${RESEND_BASE}/emails`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: clean(process.env.MAIL_FROM) || SANDBOX_FROM, to: [to], subject, html, text }),
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: clean(process.env.MAIL_FROM) || SANDBOX_FROM,
+        to: [to],
+        subject,
+        html,
+        text,
+      }),
       cache: "no-store",
+      signal: AbortSignal.timeout(10000),
     });
     if (res.ok) return { delivered: true };
 
@@ -36,7 +57,11 @@ export async function sendMail(to: string, subject: string, html: string, text: 
     const sandbox = !clean(process.env.MAIL_FROM);
 
     // 401 — ключ и правда негоден.
-    if (res.status === 401) return { delivered: false, reason: `почтовый ключ не подошёл: ${body.slice(0, 160)}` };
+    if (res.status === 401)
+      return {
+        delivered: false,
+        reason: `почтовый ключ не подошёл: ${body.slice(0, 160)}`,
+      };
 
     // 403 приходит и на негодный ключ, и — гораздо чаще — на попытку послать
     // письмо постороннему адресу с песочницы провайдера. Валить это на ключ
@@ -53,19 +78,39 @@ export async function sendMail(to: string, subject: string, html: string, text: 
     }
 
     // Домен отправителя не подтверждён или адрес в MAIL_FROM не из него.
-    if (res.status === 422) return { delivered: false, reason: `адрес отправителя отклонён: ${body.slice(0, 200)}` };
-    return { delivered: false, reason: `почтовый сервис ответил ${res.status}: ${body.slice(0, 200)}` };
+    if (res.status === 422)
+      return {
+        delivered: false,
+        reason: `адрес отправителя отклонён: ${body.slice(0, 200)}`,
+      };
+    return {
+      delivered: false,
+      reason: `почтовый сервис ответил ${res.status}: ${body.slice(0, 200)}`,
+    };
   } catch (e) {
-    return { delivered: false, reason: e instanceof Error ? e.message : "почтовый сервис недоступен" };
+    return {
+      delivered: false,
+      reason: e instanceof Error ? e.message : "почтовый сервис недоступен",
+    };
   }
 }
 
 // ------------------------------------------------------------------ письма
 const escape = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 /** Одна вёрстка на оба письма: почтовые клиенты понимают только таблицы и inline-стили. */
-function layout(heading: string, lead: string, button: string, link: string, footer: string): string {
+function layout(
+  heading: string,
+  lead: string,
+  button: string,
+  link: string,
+  footer: string,
+): string {
   const url = escape(link);
   return `<!doctype html>
 <html lang="ru"><body style="margin:0;padding:24px;background:#eceef2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
@@ -82,20 +127,42 @@ function layout(heading: string, lead: string, button: string, link: string, foo
 </body></html>`;
 }
 
-export function verifyEmail(link: string): { subject: string; html: string; text: string } {
-  const lead = "Остался один шаг: подтвердите, что это ваш адрес. Без этого вы сможете пользоваться приложением, но не сможете восстановить пароль.";
+export function verifyEmail(link: string): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const lead =
+    "Остался один шаг: подтвердите, что это ваш адрес. Без этого вы сможете пользоваться приложением, но не сможете восстановить пароль.";
   return {
     subject: "Подтвердите почту — Swiper",
-    html: layout("Подтвердите почту", lead, "Подтвердить почту", link, "Ссылка действует сутки. Если вы не регистрировались в Swiper, просто удалите письмо."),
+    html: layout(
+      "Подтвердите почту",
+      lead,
+      "Подтвердить почту",
+      link,
+      "Ссылка действует сутки. Если вы не регистрировались в Swiper, просто удалите письмо.",
+    ),
     text: `Подтвердите почту в Swiper\n\n${lead}\n\n${link}\n\nСсылка действует сутки. Если вы не регистрировались, удалите письмо.`,
   };
 }
 
-export function resetEmail(link: string): { subject: string; html: string; text: string } {
-  const lead = "Мы получили запрос на смену пароля. Придумайте новый — старый перестанет работать, и на других устройствах придётся войти заново.";
+export function resetEmail(link: string): {
+  subject: string;
+  html: string;
+  text: string;
+} {
+  const lead =
+    "Мы получили запрос на смену пароля. Придумайте новый — старый перестанет работать, и на других устройствах придётся войти заново.";
   return {
     subject: "Смена пароля — Swiper",
-    html: layout("Новый пароль", lead, "Задать новый пароль", link, "Ссылка действует час. Если вы не просили менять пароль, ничего делать не нужно — пароль останется прежним."),
+    html: layout(
+      "Новый пароль",
+      lead,
+      "Задать новый пароль",
+      link,
+      "Ссылка действует час. Если вы не просили менять пароль, ничего делать не нужно — пароль останется прежним.",
+    ),
     text: `Смена пароля в Swiper\n\n${lead}\n\n${link}\n\nСсылка действует час. Если вы не просили менять пароль, ничего делать не нужно.`,
   };
 }
