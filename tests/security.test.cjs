@@ -364,16 +364,14 @@ test("only one account can claim a nickname and it cannot be changed", async () 
 test("legacy game state is discarded without losing service data", () => {
   const { useStore } = require("../src/lib/store.ts");
   const current = useStore.getState();
-  const merged = useStore.persist
-    .getOptions()
-    .merge(
-      {
-        stats: { swipes: 100, streak: 20, bestStreak: 30, daySwipes: 20 },
-        liked: [{ id: "kept" }],
-        seen: ["viewed"],
-      },
-      current,
-    );
+  const merged = useStore.persist.getOptions().merge(
+    {
+      stats: { swipes: 100, streak: 20, bestStreak: 30, daySwipes: 20 },
+      liked: [{ id: "kept" }],
+      seen: ["viewed"],
+    },
+    current,
+  );
   assert.equal("stats" in merged, false);
   assert.equal(merged.liked[0].id, "kept");
   assert.deepEqual(merged.seen, ["viewed"]);
@@ -382,4 +380,85 @@ test("legacy game state is discarded without losing service data", () => {
   assert.deepEqual(cleanProfile({ stats: { streak: 1 }, liked: [] }), {
     liked: [],
   });
+});
+
+test("wishlist metadata edits survive persistence without duplicating items", () => {
+  const { useStore } = require("../src/lib/store.ts");
+  useStore.setState({ wishlist: [], watch: {} });
+  const item = {
+    id: "custom-test",
+    title: "Wish",
+    price: 100,
+    currency: "RUB",
+    images: [],
+  };
+  useStore.getState().setWishlist([item]);
+  useStore.getState().setWishlist([{ ...item, title: "Edited", price: 200 }]);
+  assert.equal(useStore.getState().wishlist.length, 1);
+  assert.equal(useStore.getState().wishlist[0].title, "Edited");
+  assert.equal(useStore.getState().wishlist[0].price, 200);
+  const persisted = JSON.parse(localValues.get("swipe1688")).state;
+  assert.equal(persisted.wishlist[0].price, 200);
+});
+
+test("purchase state persists and is cleared when leaving the account", () => {
+  const { useStore } = require("../src/lib/store.ts");
+  useStore.getState().setAccount({
+    id: "purchase-owner",
+    email: "local@example.test",
+    createdAt: "",
+  });
+  useStore.getState().setPurchaseStatus("p", "bought");
+  useStore.getState().setPendingPurchase({ id: "p", at: 100 });
+  useStore.getState().setPriceAlerts(false);
+  const persisted = JSON.parse(localValues.get("swipe1688")).state;
+  assert.equal(persisted.purchases.p, "bought");
+  assert.equal(persisted.pendingPurchase.id, "p");
+  assert.equal(persisted.priceAlerts, false);
+  assert.equal("pendingPurchase" in useStore.getState().exportProfile(), false);
+  useStore.getState().setAccount(null);
+  assert.deepEqual(useStore.getState().purchases, {});
+  assert.equal(useStore.getState().pendingPurchase, null);
+});
+
+test("a late feed response cannot overwrite a newer search", async () => {
+  const { useStore } = require("../src/lib/store.ts");
+  const { loadNextPage } = require("../src/lib/feed.ts");
+  const originalFetch = global.fetch;
+  let release;
+  useStore.setState({
+    query: "old",
+    filters: {},
+    seed: 17,
+    deck: [],
+    index: 0,
+    cursor: null,
+  });
+  global.fetch = () =>
+    new Promise((resolve) => {
+      release = resolve;
+    });
+  try {
+    const pending = loadNextPage();
+    useStore.setState({
+      query: "new",
+      filters: { minPrice: 100, priceCurrency: "RUB" },
+      deck: [],
+    });
+    release(
+      new Response(
+        JSON.stringify({
+          products: [{ id: "old" }],
+          cursor: "6.0",
+          provider: "local",
+          providerLabel: "Local",
+        }),
+      ),
+    );
+    await pending;
+    assert.deepEqual(useStore.getState().deck, []);
+    assert.equal(useStore.getState().query, "new");
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
