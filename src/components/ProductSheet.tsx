@@ -16,25 +16,45 @@ import {
 import { categoryLabel } from "@/lib/categories";
 import SizeGuide from "./SizeGuide";
 import ShareButton from "./ShareButton";
-import SizeProfileSheet from "./SizeProfileSheet";
 import { shopUrl } from "@/lib/shop";
 import { toast } from "./Toast";
 import { useStore } from "@/lib/store";
 import { pushWish } from "@/lib/wish/client";
 import type { Attribute, Product } from "@/lib/types";
-import { compact, formatNative, formatRub, needsConversion, plural, priceRange } from "@/lib/money";
+import {
+  compact,
+  formatNative,
+  formatRub,
+  needsConversion,
+  plural,
+  priceRange,
+} from "@/lib/money";
 
 type Tab = "desc" | "specs" | "reviews";
 
-export default function ProductSheet({ product, onClose }: { product: Product | null; onClose: () => void }) {
+export default function ProductSheet({
+  product,
+  onClose,
+}: {
+  product: Product | null;
+  onClose: () => void;
+}) {
   return (
     <AnimatePresence>
-      {product && <Sheet key={product.id} product={product} onClose={onClose} />}
+      {product && (
+        <Sheet key={product.id} product={product} onClose={onClose} />
+      )}
     </AnimatePresence>
   );
 }
 
-function Sheet({ product, onClose }: { product: Product; onClose: () => void }) {
+function Sheet({
+  product,
+  onClose,
+}: {
+  product: Product;
+  onClose: () => void;
+}) {
   const rates = useStore((s) => s.rates);
   const cart = useStore((s) => s.cart);
   const liked = useStore((s) => s.liked);
@@ -49,12 +69,10 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
   // менять её после открытия некому.
   const full = product;
   const [tab, setTab] = useState<Tab>("desc");
-  const [sizesOpen, setSizesOpen] = useState(false);
 
   const inCart = cart.some((c) => c.product.id === full.id);
   const wished = wishlist.some((p) => p.id === full.id);
   const isLiked = liked.some((p) => p.id === full.id);
-
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -68,8 +86,14 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
 
   const tabs: [Tab, string][] = [
     ["desc", "Описание"],
-    ["specs", `Характеристики${full.attributes.length ? ` ${full.attributes.length}` : ""}`],
-    ["reviews", `Отзывы${full.reviews.length || full.reviewsCount ? ` ${full.reviews.length || full.reviewsCount}` : ""}`],
+    [
+      "specs",
+      `Характеристики${full.attributes.length ? ` ${full.attributes.length}` : ""}`,
+    ],
+    [
+      "reviews",
+      `Отзывы${full.reviews.length || full.reviewsCount ? ` ${full.reviews.length || full.reviewsCount}` : ""}`,
+    ],
   ];
 
   const chips = [
@@ -95,7 +119,12 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
       transition={{ duration: 0.2 }}
       className="fixed inset-0 z-50 mx-auto flex max-w-[480px] flex-col"
     >
-      <button type="button" aria-label="Закрыть" onClick={onClose} className="absolute inset-0 bg-black/45" />
+      <button
+        type="button"
+        aria-label="Закрыть"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/45"
+      />
 
       <motion.section
         initial={{ y: "100%" }}
@@ -129,7 +158,8 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
                   {formatRub(full.price, full.currency, rates)}
                 </span>
                 <span className="tnum text-[13px] font-medium text-[var(--color-muted)]">
-                  {full.priceMax !== undefined && full.priceMax > (full.price ?? 0)
+                  {full.priceMax !== undefined &&
+                  full.priceMax > (full.price ?? 0)
                     ? `было ${formatRub(full.priceMax, full.currency, rates)}`
                     : needsConversion(full.currency)
                       ? priceRange(full.price, full.priceMax, full.currency)
@@ -139,13 +169,22 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
               {(full.rating !== undefined || !!full.reviewsCount) && (
                 <span className="flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-3 py-2 text-[13px] font-bold">
                   <IconStar className="h-[15px] w-[15px] text-[var(--color-brand)]" />
-                  {full.rating !== undefined && <span className="tnum">{full.rating.toFixed(1)}</span>}
-                  {!!full.reviewsCount && <span className="tnum"> · {compact(full.reviewsCount)}</span>}
+                  {full.rating !== undefined && (
+                    <span className="tnum">{full.rating.toFixed(1)}</span>
+                  )}
+                  {!!full.reviewsCount && (
+                    <span className="tnum">
+                      {" "}
+                      · {compact(full.reviewsCount)}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
 
-            <h1 className="text-[20px] font-bold leading-[1.25]">{full.title}</h1>
+            <h1 className="text-[20px] font-bold leading-[1.25]">
+              {full.title}
+            </h1>
 
             {chips.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
@@ -153,7 +192,9 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
                   <span
                     key={i}
                     className={`rounded-full px-3 py-1.5 text-[13px] font-semibold ${
-                      i === 0 ? "bg-[var(--color-like-soft)]" : "border-[1.5px] border-[var(--color-line)]"
+                      i === 0
+                        ? "bg-[var(--color-like-soft)]"
+                        : "border-[1.5px] border-[var(--color-line)]"
                     }`}
                   >
                     {c}
@@ -173,8 +214,14 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
                   {full.seller.name.slice(0, 2).toUpperCase()}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col leading-[1.25]">
-                  <span className="truncate text-[15px] font-bold">{full.seller.name}</span>
-                  {sellerLine && <span className="truncate text-[13px] text-[var(--color-muted)]">{sellerLine}</span>}
+                  <span className="truncate text-[15px] font-bold">
+                    {full.seller.name}
+                  </span>
+                  {sellerLine && (
+                    <span className="truncate text-[13px] text-[var(--color-muted)]">
+                      {sellerLine}
+                    </span>
+                  )}
                 </span>
                 <IconChevron className="h-5 w-5 shrink-0 text-[var(--color-muted)]" />
               </a>
@@ -190,8 +237,12 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
                     key={i}
                     className="flex items-center justify-between border-t border-[var(--color-line)] px-3.5 py-2.5 text-[14px]"
                   >
-                    <span className="text-[var(--color-muted)]">{t.to ? `${t.from}–${t.to} шт.` : `от ${t.from} шт.`}</span>
-                    <span className="tnum font-bold">{formatRub(t.price, full.currency, rates)}</span>
+                    <span className="text-[var(--color-muted)]">
+                      {t.to ? `${t.from}–${t.to} шт.` : `от ${t.from} шт.`}
+                    </span>
+                    <span className="tnum font-bold">
+                      {formatRub(t.price, full.currency, rates)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -199,7 +250,9 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
 
             {full.skus.length > 0 && (
               <div>
-                <p className="mb-2 text-[13px] font-bold text-[var(--color-muted)]">Варианты</p>
+                <p className="mb-2 text-[13px] font-bold text-[var(--color-muted)]">
+                  Варианты
+                </p>
                 <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
                   {full.skus.slice(0, 20).map((sku) => (
                     <span
@@ -219,8 +272,6 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
             )}
           </div>
 
-          <SizeGuide category={full.category} title={full.title} onEditProfile={() => setSizesOpen(true)} />
-
           {/* Вкладки заменены складными разделами: на узком экране три ярлыка в
               ряд не помещались, а описание — единственное, что читают всегда. */}
           <div className="mt-1 px-4">
@@ -235,23 +286,30 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
               </Section>
             )}
             {full.attributes.length > 0 && (
-            <Section title="Характеристики" count={full.attributes.length}>
-              {full.attributes.length === 0 ? (
-                <p className="text-[14px] text-[var(--color-muted)]">Характеристики не указаны.</p>
-              ) : (
-                <div className="divide-y divide-[var(--color-line)]">
-                  {full.attributes.map((a, i) => (
-                    <div key={i} className="flex gap-3 py-2.5 text-[14px]">
-                      <span className="w-1/2 shrink-0 text-[var(--color-muted)]">{a.name}</span>
-                      <span className="font-semibold">{a.value}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Section>
+              <Section title="Характеристики" count={full.attributes.length}>
+                {full.attributes.length === 0 ? (
+                  <p className="text-[14px] text-[var(--color-muted)]">
+                    Характеристики не указаны.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-[var(--color-line)]">
+                    {full.attributes.map((a, i) => (
+                      <div key={i} className="flex gap-3 py-2.5 text-[14px]">
+                        <span className="w-1/2 shrink-0 text-[var(--color-muted)]">
+                          {a.name}
+                        </span>
+                        <span className="font-semibold">{a.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Section>
             )}
             {(full.reviews.length > 0 || !!full.reviewsCount) && (
-              <Section title="Отзывы" count={full.reviews.length || full.reviewsCount}>
+              <Section
+                title="Отзывы"
+                count={full.reviews.length || full.reviewsCount}
+              >
                 <Reviews product={full} />
               </Section>
             )}
@@ -298,17 +356,28 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
               toggleWish(full);
               // Вишлист вошедшего живёт на сервере: его открывают по ссылке друзья.
               pushWish(full, !wished);
-              toast(wished ? "Убрали из вишлиста" : "В вишлисте — следим за ценой", wished ? "default" : "like");
+              toast(
+                wished ? "Убрали из вишлиста" : "В вишлисте — следим за ценой",
+                wished ? "default" : "like",
+              );
             }}
             aria-label={wished ? "Убрать из вишлиста" : "В вишлист"}
-            title={wished ? "Убрать из вишлиста" : "В вишлист — будем следить за ценой"}
+            title={
+              wished
+                ? "Убрать из вишлиста"
+                : "В вишлист — будем следить за ценой"
+            }
             className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
               wished
                 ? "on-accent border-transparent bg-[var(--color-brand)]"
                 : "border-[var(--color-line)] text-[var(--color-ink)]"
             }`}
           >
-            {wished ? <IconBookmarkFilled className="h-6 w-6" /> : <IconBookmark className="h-6 w-6" />}
+            {wished ? (
+              <IconBookmarkFilled className="h-6 w-6" />
+            ) : (
+              <IconBookmark className="h-6 w-6" />
+            )}
           </button>
           <button
             type="button"
@@ -323,8 +392,6 @@ function Sheet({ product, onClose }: { product: Product; onClose: () => void }) 
             {inCart ? "Уже в корзине" : "В корзину"}
           </button>
         </div>
-
-        <SizeProfileSheet open={sizesOpen} onClose={() => setSizesOpen(false)} />
       </motion.section>
     </motion.div>
   );
@@ -353,7 +420,12 @@ function Section({
       >
         <span>
           {title}
-          {!!count && <span className="tnum font-semibold text-[var(--color-muted)]"> · {count}</span>}
+          {!!count && (
+            <span className="tnum font-semibold text-[var(--color-muted)]">
+              {" "}
+              · {count}
+            </span>
+          )}
         </span>
         <IconChevronDown
           className={`h-5 w-5 shrink-0 text-[var(--color-muted)] transition-transform ${open ? "rotate-180" : ""}`}
@@ -371,7 +443,7 @@ function Section({
 function Gallery({ images, title }: { images: string[]; title: string }) {
   const [index, setIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
-  const list = images.length ? images : [""];
+  const list = useMemo(() => (images.length ? images : [""]), [images]);
 
   function onScroll() {
     const el = ref.current;
@@ -420,12 +492,22 @@ function Gallery({ images, title }: { images: string[]; title: string }) {
               key={i}
               type="button"
               aria-label={`Фото ${i + 1}`}
-              onClick={() => ref.current?.scrollTo({ left: i * ref.current.clientWidth, behavior: "smooth" })}
+              onClick={() =>
+                ref.current?.scrollTo({
+                  left: i * ref.current.clientWidth,
+                  behavior: "smooth",
+                })
+              }
               className={`h-14 w-14 shrink-0 overflow-hidden rounded-[14px] transition-shadow ${
                 i === index ? "shadow-[0_0_0_2px_var(--color-ink)]" : ""
               }`}
             >
-              <Img src={thumbOf(src)} alt="" className="h-full w-full" fallbackLabel="" />
+              <Img
+                src={thumbOf(src)}
+                alt=""
+                className="h-full w-full"
+                fallbackLabel=""
+              />
             </button>
           ))}
         </div>
@@ -436,7 +518,10 @@ function Gallery({ images, title }: { images: string[]; title: string }) {
 
 function Reviews({ product }: { product: Product }) {
   const [expanded, setExpanded] = useState(false);
-  const list = useMemo(() => (expanded ? product.reviews : product.reviews.slice(0, 5)), [expanded, product.reviews]);
+  const list = useMemo(
+    () => (expanded ? product.reviews : product.reviews.slice(0, 5)),
+    [expanded, product.reviews],
+  );
 
   if (!product.reviews.length) {
     return (
@@ -451,13 +536,18 @@ function Reviews({ product }: { product: Product }) {
   return (
     <div className="space-y-4">
       {list.map((r) => (
-        <div key={r.id} className="border-b border-[var(--color-line)] pb-4 last:border-0 last:pb-0">
+        <div
+          key={r.id}
+          className="border-b border-[var(--color-line)] pb-4 last:border-0 last:pb-0"
+        >
           <div className="flex items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[13px] font-semibold">
               {(r.author ?? "?").slice(0, 1).toUpperCase()}
             </span>
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold">{r.author ?? "Покупатель"}</p>
+              <p className="truncate text-[13px] font-semibold">
+                {r.author ?? "Покупатель"}
+              </p>
               {r.rating !== undefined && (
                 <span className="flex items-center gap-0.5">
                   {[1, 2, 3, 4, 5].map((n) => (
@@ -469,13 +559,23 @@ function Reviews({ product }: { product: Product }) {
                 </span>
               )}
             </div>
-            {r.date && <span className="ml-auto text-[12px] text-[var(--color-muted)]">{r.date}</span>}
+            {r.date && (
+              <span className="ml-auto text-[12px] text-[var(--color-muted)]">
+                {r.date}
+              </span>
+            )}
           </div>
           <p className="mt-2 text-[14px] leading-relaxed">{r.text}</p>
           {r.images.length > 0 && (
             <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto">
               {r.images.map((src, i) => (
-                <Img key={i} src={src} alt="" className="h-20 w-20 shrink-0 rounded-xl" fallbackLabel="" />
+                <Img
+                  key={i}
+                  src={src}
+                  alt=""
+                  className="h-20 w-20 shrink-0 rounded-xl"
+                  fallbackLabel=""
+                />
               ))}
             </div>
           )}
