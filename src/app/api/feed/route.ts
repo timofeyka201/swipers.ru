@@ -21,6 +21,8 @@ type Body = {
     group?: string;
     categories?: string[];
     maxPrice?: number;
+    minPrice?: number;
+    priceCurrency?: "RUB";
     onlyDiscount?: boolean;
   };
   hint?: TasteHint;
