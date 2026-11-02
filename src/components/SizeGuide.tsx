@@ -17,7 +17,7 @@ export default function SizeGuide({
 }: {
   category?: string;
   title?: string;
-  onEditProfile: () => void;
+  onEditProfile?: () => void;
 }) {
   const sizes = useStore((s) => s.sizes);
   const [open, setOpen] = useState(false);
@@ -25,7 +25,9 @@ export default function SizeGuide({
   if (!table) return null;
 
   const known = hasSizes(sizes);
-  const mine = known ? table.rows.find((r) => matchesProfile(table, r, sizes)) : undefined;
+  const mine = known
+    ? table.rows.find((r) => matchesProfile(table, r, sizes))
+    : undefined;
 
   return (
     <section className="mt-2 bg-[var(--color-surface)] px-4 py-4">
@@ -36,12 +38,20 @@ export default function SizeGuide({
         className="flex min-h-[48px] w-full items-center gap-2 text-left"
       >
         <span className="flex-1">
-          <span className="block text-[15px] font-bold">Гайд по размерам · {table.title}</span>
+          <span className="block text-[15px] font-bold">
+            Гайд по размерам · {table.title}
+          </span>
           <span className="block text-[13px] text-[var(--color-muted)]">
-            {mine ? `Ваш размер: ${mine.label}` : known ? "По вашим меркам точного совпадения нет" : "Укажите мерки — подсветим вашу строку"}
+            {mine
+              ? `Ваш размер: ${mine.label}`
+              : known
+                ? "По вашим меркам точного совпадения нет"
+                : "Справочная таблица размеров"}
           </span>
         </span>
-        <IconChevron className={`h-5 w-5 shrink-0 text-[var(--color-muted)] transition-transform ${open ? "rotate-90" : ""}`} />
+        <IconChevron
+          className={`h-5 w-5 shrink-0 text-[var(--color-muted)] transition-transform ${open ? "rotate-90" : ""}`}
+        />
       </button>
 
       {open && (
@@ -66,12 +76,21 @@ export default function SizeGuide({
                   return (
                     <tr
                       key={row.label}
-                      className={on ? "bg-[var(--color-brand-soft)] font-bold text-[var(--color-brand)]" : ""}
+                      className={
+                        on
+                          ? "bg-[var(--color-brand-soft)] font-bold text-[var(--color-brand)]"
+                          : ""
+                      }
                     >
                       {row.values.map((v, i) => (
-                        <td key={i} className="tnum border-b border-[var(--color-line)] px-2 py-2">
+                        <td
+                          key={i}
+                          className="tnum border-b border-[var(--color-line)] px-2 py-2"
+                        >
                           {v}
-                          {on && i === 0 && <span className="ml-1.5 text-[11px]">— ваш</span>}
+                          {on && i === 0 && (
+                            <span className="ml-1.5 text-[11px]">— ваш</span>
+                          )}
                         </td>
                       ))}
                     </tr>
@@ -80,14 +99,9 @@ export default function SizeGuide({
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-[12px] leading-snug text-[var(--color-muted)]">{table.note}</p>
-          <button
-            type="button"
-            onClick={onEditProfile}
-            className="mt-3 w-full rounded-2xl bg-[var(--color-surface-2)] py-3 text-[14px] font-semibold"
-          >
-            {known ? "Изменить мои размеры" : "Указать мои размеры"}
-          </button>
+          <p className="mt-3 text-[12px] leading-snug text-[var(--color-muted)]">
+            {table.note}
+          </p>
         </div>
       )}
     </section>
