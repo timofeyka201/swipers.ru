@@ -1,3 +1,4 @@
+import { safeFetch } from "@/lib/safe-fetch";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -30,14 +31,6 @@ const MAX_BYTES = 8 * 1024 * 1024;
  * AliExpress на него не смотрит вовсе. User-Agent обычный — браузерный, иначе
  * некоторые узлы отвечают отказом серверным клиентам.
  */
-function headers(): Record<string, string> {
-  return {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
-    Accept: "image/avif,image/webp,image/*,*/*;q=0.8",
-  };
-}
-
 function allowed(host: string): boolean {
   return ALLOWED.some((re) => re.test(host)) || EXTRA.includes(host);
 }
@@ -64,27 +57,18 @@ export async function GET(req: NextRequest) {
 }
 
 async function stream(url: string): Promise<NextResponse> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 15_000);
   try {
-    const upstream = await fetch(url, { signal: ctrl.signal, headers: headers() });
-    if (!upstream.ok || !upstream.body) return new NextResponse("upstream error", { status: 502 });
-
-    const type = upstream.headers.get("content-type") || "image/jpeg";
-    if (!type.startsWith("image/")) return new NextResponse("not an image", { status: 415 });
-
-    const len = Number(upstream.headers.get("content-length") || 0);
-    if (len > MAX_BYTES) return new NextResponse("too large", { status: 413 });
-
-    return new NextResponse(upstream.body, {
+    const result = await safeFetch(url, MAX_BYTES, 15000);
+    if (!result.type.startsWith("image/"))
+      return new NextResponse("not an image", { status: 415 });
+    return new NextResponse(new Uint8Array(result.body), {
       headers: {
-        "Content-Type": type,
-        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+        "Content-Type": result.type,
+        "Cache-Control": "public, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {
     return new NextResponse("fetch failed", { status: 502 });
-  } finally {
-    clearTimeout(timer);
   }
 }
