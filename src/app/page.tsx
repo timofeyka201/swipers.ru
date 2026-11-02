@@ -1,724 +1,289 @@
 "use client";
-
-import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "framer-motion";
+import { useHydrated, useStore, type Decision } from "@/lib/store";
+import { loadNextPage } from "@/lib/feed";
+import { track } from "@/lib/stat";
+import { shopUrl } from "@/lib/shop";
+import TopBar from "@/components/TopBar";
+import SwipeCard from "@/components/SwipeCard";
+import ProductSheet from "@/components/ProductSheet";
 import FilterSheet from "@/components/FilterSheet";
 import Onboarding from "@/components/Onboarding";
-import PriceDrops from "@/components/PriceDrops";
+import RefineCard from "@/components/RefineCard";
 import RejectReasonSheet from "@/components/RejectReasonSheet";
-import TasteQuiz from "@/components/TasteQuiz";
-import ProductSheet from "@/components/ProductSheet";
-import SwipeCard from "@/components/SwipeCard";
-import { prefetchImage } from "@/components/Img";
-import TopBar from "@/components/TopBar";
-import {
-  IconCart,
-  IconHeart,
-  IconSearch,
-  IconSliders,
-} from "@/components/Icons";
-import { toast } from "@/components/Toast";
-import { loadNextPage } from "@/lib/feed";
-import { isFirstLaunch, track } from "@/lib/stat";
-import { plural } from "@/lib/money";
-import { useHydrated, useStore, type Decision } from "@/lib/store";
-import type { ExitWay } from "@/components/SwipeCard";
-import type { GroupFacet } from "@/lib/providers/types";
+import { Empty } from "@/components/Ui";
+import { IconCheck, IconX } from "@/components/Icons";
 import type { Product } from "@/lib/types";
-
-const VISIBLE = 3;
-/** Сколько карточек за видимой стопкой подгружать заранее. */
-const PREFETCH = 4;
-/** За сколько карточек до конца просить следующую страницу. */
-const PREFETCH_AT = 8;
-/** Сколько первых свайпов подсвечивать зоны тапа. */
-const HINT_SWIPES = 3;
-
-type Facets = {
-  categories: string[];
-  groups: GroupFacet[];
-  tags: string[];
-  maxPrice: number;
-  currency: string;
-};
-
-function haptic(pattern: number | number[]) {
-  if (typeof navigator !== "undefined" && "vibrate" in navigator)
-    navigator.vibrate(pattern);
-}
-
-export default function DeckPage() {
+import type { GroupFacet } from "@/lib/providers/types";
+export default function Home() {
+  const router = useRouter();
   const hydrated = useHydrated();
-  const deck = useStore((s) => s.deck);
-  const index = useStore((s) => s.index);
-  const seenCount = useStore((s) => s.seen.length);
-  const rates = useStore((s) => s.rates);
-  const cursor = useStore((s) => s.cursor);
-  const filters = useStore((s) => s.filters);
-  const query = useStore((s) => s.query);
-  const onboarded = useStore((s) => s.onboarded);
-  const tasted = useStore((s) => s.tasted);
-  const pendingReason = useStore((s) => s.pendingReason);
-  const drops = useStore((s) => s.drops);
-  const liked = useStore((s) => s.liked);
-  const wishlist = useStore((s) => s.wishlist);
-  const cart = useStore((s) => s.cart);
-  const finishTaste = useStore((s) => s.finishTaste);
-  const answerReason = useStore((s) => s.answerReason);
-  const applyPrices = useStore((s) => s.applyPrices);
-  const historyLen = useStore((s) => s.history.length);
-  const decide = useStore((s) => s.decide);
-  const undo = useStore((s) => s.undo);
-  const setFilters = useStore((s) => s.setFilters);
-  const finishOnboarding = useStore((s) => s.finishOnboarding);
-
-  /**
-   * Куда улетает уходящая карточка. По умолчанию «никуда»: лента пересобирается
-   * не только от решений — профиль приезжает с сервера при входе, меняются
-   * фильтры, заканчивается тест вкусов. Раньше в этих случаях карточка улетала
-   * вправо со штампом «ХОЧУ», и выглядело это так, будто приложение лайкнуло
-   * товар само.
-   */
-  const [exitDir, setExitDir] = useState<ExitWay>("reset");
-  const [sheet, setSheet] = useState<Product | null>(null);
+  const s = useStore();
+  const [facets, setFacets] = useState<{
+    groups: GroupFacet[];
+    maxPrice: number;
+    currency: string;
+  }>({ groups: [], maxPrice: 100000, currency: "RUB" });
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [feedError, setFeedError] = useState<string | null>(null);
-  /** Итог поиска или фильтра: сколько нашлось и показано ли уже всё. */
-  const [search, setSearch] = useState<{ total: number } | null>(null);
-  /** По какому запросу уже предупреждали, что точного совпадения нет. */
-  const looseWarned = useRef<string | null>(null);
-  /** По какому запросу уже записали итог поиска в статистику. */
-  const searchTracked = useRef<string | null>(null);
+  const [product, setProduct] = useState<Product | null>(null);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [facets, setFacets] = useState<Facets>({
-    categories: [],
-    groups: [],
-    tags: [],
-    maxPrice: 0,
-    currency: "RUB",
-  });
-  const [burst, setBurst] = useState<{ id: number; kind: Decision } | null>(
-    null,
-  );
-  const loadingRef = useRef(false);
-
-  const visible = deck.slice(index, index + VISIBLE);
-  const remaining = Math.max(0, deck.length - index);
-
-  /**
-   * Картинки следующих карточек тянем заранее. В стопке видны три, а свайпают
-   * быстро: без этого каждая четвёртая карточка встречает человека серым
-   * прямоугольником, пока грузится фотография.
-   */
+  const [ended, setEnded] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [coach, setCoach] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [tick, setTick] = useState(0);
+  const inflight = useRef(false);
+  const active = s.deck[s.index];
+  const refine =
+    !!s.pendingReason &&
+    (s.taste.budget === undefined ||
+      !Object.keys(s.taste.tags ?? {}).some((k) => k.startsWith("стиль:")) ||
+      !Object.keys(s.taste.tags ?? {}).some((k) => k.startsWith("материал:")));
   useEffect(() => {
-    for (const [i, product] of deck
-      .slice(index + VISIBLE, index + VISIBLE + PREFETCH)
-      .entries()) {
-      prefetchImage(product.images[0]);
-      // У ближайших карточек берём заодно второй снимок: к моменту, когда
-      // карточка окажется наверху и по ней тапнут, он уже будет на месте.
-      if (i < 2) prefetchImage(product.images[1]);
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) {
+      useStore.setState({ query: q });
+      useStore.getState().setFilters({});
     }
-  }, [deck, index]);
-
-  /**
-   * Снижение цены ищем один раз за запуск: сверяем запомненные цены отложенных
-   * товаров с текущими. Чаще не нужно — витрина меняется не ежеминутно.
-   */
-  const pricesChecked = useRef(false);
-  useEffect(() => {
-    if (!hydrated || pricesChecked.current) return;
-    const ids = [
-      ...new Set(
-        [...liked, ...wishlist, ...cart.map((c) => c.product)].map((p) => p.id),
-      ),
-    ];
-    if (!ids.length) return;
-    pricesChecked.current = true;
-    fetch("/api/prices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids }),
-    })
-      .then((r) => r.json())
-      .then((d: { prices?: Record<string, number> }) => {
-        if (d.prices) applyPrices(d.prices);
-      })
-      .catch(() => undefined);
-  }, [hydrated, liked, wishlist, cart, applyPrices]);
-
-  /*
-   * Открытие приложения. Читаем «первый ли запуск» до первого же события:
-   * идентификатор устройства заводится при отправке, и после неё запуск уже
-   * не первый.
-   */
-  useEffect(() => {
-    const first = isFirstLaunch();
-    const standalone =
-      typeof window !== "undefined" && window.matchMedia
-        ? window.matchMedia("(display-mode: standalone)").matches
-        : false;
-    const {
-      onboarded: seen,
-      tasted: quizzed,
-      seen: viewed,
-    } = useStore.getState();
-    track("open", {
-      first,
-      standalone,
-      onboarded: seen,
-      tasted: quizzed,
-      swipes: viewed.length,
-    });
-  }, []);
-
-  useEffect(() => {
     fetch("/api/health")
       .then((r) => r.json())
-      .then((d: { facets?: Facets; catalog?: { total?: number } }) => {
+      .then((d) => {
         if (d.facets) setFacets(d.facets);
-        // Разовая уборка: в колоде могли остаться карточки офлайн-подборки —
-        // раньше ею подменялась выдача, когда по запросу ничего не нашлось,
-        // и приложение продолжало спрашивать карточки у неё. Витрина есть —
-        // пересобираем ленту из неё.
-        const { deck, query: q, startFeed } = useStore.getState();
-        if (
-          (d.catalog?.total ?? 0) > 0 &&
-          deck.some((p) => p.id.startsWith("demo-"))
-        ) {
-          startFeed({ provider: null, query: q });
-        }
       })
-      .catch(() => undefined);
+      .catch(() => {});
+    track("open", {
+      standalone: window.matchMedia("(display-mode: standalone)").matches,
+    });
   }, []);
-
-  const onDecide = useCallback(
-    (d: Decision) => {
-      setExitDir(d);
-      // Направление живёт ровно столько, сколько длится вылет карточки:
-      // дальше оно снова «никуда».
-      window.setTimeout(() => setExitDir("reset"), 420);
-      const product = decide(d);
-      if (!product) return;
-      // Глубина — это и есть проверка «учится ли лента»: доля «хочу» на
-      // первых двадцати карточках против сотой.
-      track("swipe", {
-        d,
-        n: useStore.getState().seen.length,
-        category: product.category,
-        group: product.group,
-        why: product.why,
-        // Меток у карточки до восьми; в журнал идут первые четыре — этого
-        // хватает, чтобы увидеть, какие признаки собирают «хочу».
-        tags: (product.tags ?? []).slice(0, 4),
-      });
-      if (d === "like") {
-        haptic(12);
-        setBurst({ id: Date.now(), kind: d });
-      } else if (d === "super") {
-        haptic([10, 40, 20]);
-        setBurst({ id: Date.now(), kind: d });
-        toast("В корзине", "like");
-      } else {
-        haptic(6);
-      }
-    },
-    [decide],
-  );
-
-  const onOnboarded = useCallback(() => {
-    track("onboard", { done: true });
-    finishOnboarding();
-  }, [finishOnboarding]);
-
-  /** Итог теста вкусов: что выбрали и выбрали ли вообще. */
-  const onQuizDone = useCallback(
-    (picked: string[], budget?: number, seeded?: Record<string, number>) => {
-      const chosen = Object.entries(seeded ?? {})
-        .filter(([, v]) => v > 0)
-        .map(([tag]) => tag);
-      track("quiz", {
-        picked: picked.length,
-        categories: picked.slice(0, 12),
-        budget: budget ?? 0,
-        tags: chosen,
-        skipped: picked.length === 0 && !chosen.length,
-      });
-      finishTaste(picked, budget, seeded);
-    },
-    [finishTaste],
-  );
-
-  const onUndo = useCallback(() => {
-    track("undo", { n: useStore.getState().seen.length });
-    undo();
-  }, [undo]);
-
-  const onReason = useCallback(
-    (reason: Parameters<typeof answerReason>[0]) => {
-      if (reason) track("reason", { reason });
-      answerReason(reason);
-    },
-    [answerReason],
-  );
-
   useEffect(() => {
-    if (!burst) return;
-    const timer = setTimeout(() => setBurst(null), 620);
-    return () => clearTimeout(timer);
-  }, [burst]);
-
-  // Клавиатура: на десктопе свайпать так же быстро, как пальцем.
+    setEnded(false);
+    setError("");
+  }, [s.query, s.filters]);
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (sheet || filtersOpen || !onboarded || !tasted || pendingReason)
-        return;
-      if (e.key === "ArrowRight") onDecide("like");
-      else if (e.key === "ArrowLeft") onDecide("dislike");
-      else if (e.key === "ArrowUp") onDecide("super");
-      else if (e.key === "Backspace") onUndo();
-      else if (e.key === " " || e.key === "Enter") {
-        e.preventDefault();
-        const top = deck[index];
-        if (top) setSheet(top);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [
-    onDecide,
-    onUndo,
-    sheet,
-    filtersOpen,
-    onboarded,
-    tasted,
-    pendingReason,
-    deck,
-    index,
-  ]);
-
-  /** Бесконечная лента: запас карточек пополняется заранее. */
-  useEffect(() => {
-    if (!hydrated || feedError) return;
-    if (remaining > PREFETCH_AT) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
+    if (
+      !hydrated ||
+      !s.onboarded ||
+      ended ||
+      error ||
+      inflight.current ||
+      s.deck.length - s.index > 6
+    )
+      return;
+    inflight.current = true;
     setLoading(true);
-    const startedAt = Date.now();
+    const key = JSON.stringify({ query: s.query, filters: s.filters });
     loadNextPage()
-      .then((res) => {
-        /*
-         * Долгое ожидание записываем отдельно — и только долгое. Обычная
-         * подгрузка укладывается в доли секунды и журнала не стоит; а вот
-         * «крутится подбор» — ровно та жалоба, ради которой эта метрика и
-         * заведена.
-         */
-        const ms = Date.now() - startedAt;
-        if (ms > 1500 || (res.tries ?? 1) > 1 || !res.ok) {
-          track("wait", {
-            ms,
-            tries: res.tries ?? 1,
-            ok: res.ok,
-            search: !!query,
-          });
-        }
-        // Итог поиска — один раз на запрос, а не на каждую его страницу.
-        if (query && searchTracked.current !== query) {
-          searchTracked.current = query;
-          track("search", {
-            q: query.slice(0, 64),
-            found: res.total ?? 0,
-            loose: !!res.loose,
-            noMore: !!res.noMore,
-          });
-        }
-        if (!res.ok) {
-          setFeedError(res.error ?? "Источник не ответил");
+      .then((result) => {
+        const state = useStore.getState();
+        if (
+          key !== JSON.stringify({ query: state.query, filters: state.filters })
+        )
           return;
-        }
-        // Поиск, по которому больше нечего показать, — не ошибка ленты:
-        // о нём рассказывает отдельный экран.
-        if (res.noMore) setSearch({ total: res.total ?? 0 });
-        // Все слова разом не нашлись. Молчать об этом нельзя: человек решит,
-        // что поиск показывает что попало.
-        if (res.loose && looseWarned.current !== query) {
-          looseWarned.current = query;
-          toast("Точного совпадения нет — показываем по части запроса", "warn");
-        }
+        if (!result.ok) setError(result.error ?? "Нет связи");
+        if (result.noMore || (result.tries === 4 && !state.deck[state.index]))
+          setEnded(true);
+        if (result.total !== undefined) setTotal(result.total);
       })
       .finally(() => {
-        loadingRef.current = false;
+        inflight.current = false;
         setLoading(false);
+        setTick((v) => v + 1);
       });
-  }, [hydrated, remaining, feedError, cursor, query]);
-
-  const group = filters.group ?? null;
-
-  /**
-   * Что показывать второй ступенью: категории выбранного раздела, а пока
-   * раздел не выбран — самые полные категории витрины. Тот же список уходит и
-   * в шторку фильтров: выбрать там категорию, которой в разделе нет, значит
-   * получить пустую ленту.
-   */
-  const groupCategories = useMemo(
-    () =>
-      group
-        ? (facets.groups.find((g) => g.title === group)?.categories ?? [])
-        : facets.categories,
-    [group, facets],
-  );
-
-  const pickGroup = (g: string | null) => {
-    /*
-     * Категория живёт внутри раздела, поэтому уходит вместе с ним: иначе
-     * «Купальники», выбранные в женской одежде, остаются включёнными и после
-     * возврата ко всем разделам — в строке их уже не видно, а лента по-
-     * прежнему показывает одни купальники.
-     */
-    const inside = g
-      ? (facets.groups.find((x) => x.title === g)?.categories ?? [])
-      : [];
-    const categories = (filters.categories ?? []).filter((c) =>
-      inside.includes(c),
-    );
-    track("filter", { what: "group", group: g ?? "", from: "bar" });
-    setFilters({ ...filters, group: g ?? undefined, categories });
-    setFeedError(null);
-    setSearch(null);
-  };
-
-  const toggleCategory = (c: string) => {
-    const list = filters.categories ?? [];
-    track("filter", {
-      what: "category",
-      category: c,
-      on: !list.includes(c),
-      group: group ?? "",
-      from: "bar",
+  }, [
+    hydrated,
+    s.onboarded,
+    s.deck.length,
+    s.index,
+    s.cursor,
+    s.query,
+    s.filters,
+    ended,
+    error,
+    retry,
+    tick,
+  ]);
+  const decide = (decision: Decision) => {
+    const p = useStore.getState().decide(decision);
+    if (!p) return;
+    track("swipe", {
+      decision,
+      product: p.id,
+      category: p.category,
+      group: p.group,
     });
-    setFilters({
-      ...filters,
-      categories: list.includes(c) ? list.filter((x) => x !== c) : [...list, c],
-    });
-    setFeedError(null);
-    setSearch(null);
+    if (decision === "super" && p.url) {
+      const store = useStore.getState();
+      store.noteOrder(p);
+      store.setPurchaseStatus(
+        p.id,
+        store.purchases[p.id] === "bought" ? "bought" : "opened",
+      );
+      store.setPendingPurchase({ id: p.id, at: Date.now() });
+      window.open(shopUrl(p, "deck"), "_blank", "noopener,noreferrer");
+      router.push("/leaving");
+    }
   };
-
-  /** Поиск и фильтры применяются вместе: обе правки пересобирают ленту разом. */
-  const applyFilters = (f: typeof filters, q: string) => {
-    track("filter", {
-      what: "sheet",
-      group: f.group ?? "",
-      categories: f.categories ?? [],
-      maxPrice: f.maxPrice,
-      discount: !!f.onlyDiscount,
-      query: !!q,
+  const reset = () => {
+    useStore.setState({
+      query: "",
+      filters: {},
+      deck: [],
+      index: 0,
+      cursor: null,
     });
-    useStore.setState({ query: q });
-    setFilters(f);
-    setFeedError(null);
-    setSearch(null);
+    setEnded(false);
+    setError("");
+    setRetry((v) => v + 1);
   };
-
-  if (!hydrated) {
-    return (
-      <div className="flex flex-1 items-center justify-center">
-        <span className="h-7 w-7 animate-spin rounded-full border-[3px] border-[var(--color-line)] border-t-[var(--color-brand)]" />
-      </div>
-    );
-  }
-
-  const extraFilters =
-    (filters.maxPrice !== undefined ? 1 : 0) +
-    (filters.onlyDiscount ? 1 : 0) +
-    (query ? 1 : 0) +
-    (group ? 1 : 0);
-
+  if (!hydrated) return <div className="ui-loader" aria-label="Загрузка" />;
+  if (!s.onboarded) return <Onboarding onDone={() => setCoach(true)} />;
+  const categories = s.filters.group
+    ? (facets.groups.find((g) => g.title === s.filters.group)?.categories ?? [])
+    : [];
   return (
-    <div className="flex flex-1 flex-col">
-      <AnimatePresence>
-        {!onboarded && <Onboarding onDone={onOnboarded} />}
-        {onboarded && !tasted && facets.categories.length > 0 && (
-          <TasteQuiz
-            categories={facets.categories}
-            tags={facets.tags}
-            onDone={onQuizDone}
-          />
-        )}
-      </AnimatePresence>
-
+    <div className="ui-feed">
       <TopBar
         groups={facets.groups}
-        group={group}
-        categories={groupCategories}
-        active={filters.categories ?? []}
-        extraFilters={extraFilters}
-        query={query}
-        onPickGroup={pickGroup}
-        onToggleCategory={toggleCategory}
+        group={s.filters.group ?? null}
+        categories={categories}
+        active={s.filters.categories ?? []}
+        extraFilters={0}
+        query={s.query}
+        onPickGroup={(group) => {
+          s.setFilters({
+            ...s.filters,
+            group: group ?? undefined,
+            categories: [],
+          });
+        }}
+        onToggleCategory={(c) =>
+          s.setFilters({
+            ...s.filters,
+            categories: s.filters.categories?.includes(c)
+              ? s.filters.categories.filter((v) => v !== c)
+              : [...(s.filters.categories ?? []), c],
+          })
+        }
         onOpenFilters={() => setFiltersOpen(true)}
-        onClearQuery={() => applyFilters(filters, "")}
+        onClearQuery={reset}
+        onUndo={s.undo}
+        canUndo={s.history.length > 0}
       />
-
-      <div className="relative flex-1 px-4 pb-3 pt-2">
-        <div className="absolute inset-x-4 bottom-3 top-2">
-          <AnimatePresence custom={exitDir} initial={false}>
-            {visible
-              .map((product, i) => ({ product, i }))
-              .reverse()
-              .map(({ product, i }) => (
-                <SwipeCard
-                  key={product.id}
-                  product={product}
-                  rates={rates}
-                  depth={i}
-                  showHint={i === 0 && seenCount < HINT_SWIPES}
-                  onDecide={onDecide}
-                  onOpen={() => setSheet(product)}
-                  onUndo={onUndo}
-                  canUndo={historyLen > 0}
-                />
-              ))}
-          </AnimatePresence>
-
-          {remaining === 0 && (
-            <Interlude
-              loading={loading}
-              error={feedError}
-              query={query}
-              search={search}
-              hasFilters={extraFilters + (filters.categories?.length ?? 0) > 0}
-              onRetry={() => {
-                loadingRef.current = false;
-                setFeedError(null);
-              }}
-              onClearFilters={() => applyFilters({}, "")}
-              onOpenSearch={() => setFiltersOpen(true)}
+      <div className="ui-feed-stage">
+        <AnimatePresence>
+          {refine ? (
+            <RefineCard key="refine" onDone={() => s.answerReason(null)} />
+          ) : active ? (
+            <SwipeCard
+              key={active.id}
+              product={active}
+              active
+              depth={0}
+              exitWay="like"
+              onDecide={decide}
+              onOpen={() => setProduct(active)}
+              onUndo={s.undo}
+              canUndo={!!s.history.length}
+            />
+          ) : error ? (
+            <Empty
+              title="Нет связи"
+              detail="Новые карточки подгрузятся, когда появится интернет. Сохранённое открывается и без сети."
+            >
+              <button
+                className="ui-btn ui-dark"
+                onClick={() => {
+                  setError("");
+                  setRetry((v) => v + 1);
+                }}
+              >
+                Попробовать снова
+              </button>
+              <Link className="ui-btn ui-soft" href="/likes">
+                Открыть сохранённое
+              </Link>
+            </Empty>
+          ) : ended ? (
+            <Empty
+              icon={<IconCheck />}
+              title={s.query ? "Это всё по запросу" : "Вы посмотрели подборку"}
+              detail={
+                total
+                  ? "Вы посмотрели доступные товары. Понравившееся — в «Сохранённом»."
+                  : "Попробуйте другой запрос или измените фильтры."
+              }
+            >
+              <Link className="ui-btn ui-dark" href="/likes">
+                Открыть сохранённое
+              </Link>
+              <button
+                className="ui-btn ui-soft"
+                onClick={() => setFiltersOpen(true)}
+              >
+                Изменить запрос
+              </button>
+              <button className="ui-text-button" onClick={reset}>
+                Вернуться к ленте
+              </button>
+            </Empty>
+          ) : (
+            <div
+              className="ui-loader"
+              aria-label={loading ? "Подбираем товары" : "Загрузка"}
             />
           )}
-
-          {/* Короткий отклик на решение: заметнее тоста, не мешает следующему свайпу */}
-          <AnimatePresence>
-            {burst && (
-              <motion.div
-                key={burst.id}
-                initial={{ scale: 0.4, opacity: 0 }}
-                animate={{ scale: 1.15, opacity: 1 }}
-                exit={{ scale: 1.5, opacity: 0 }}
-                transition={{ type: "spring", stiffness: 300, damping: 18 }}
-                className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center"
-              >
-                <span
-                  className="flex h-24 w-24 items-center justify-center rounded-full"
-                  style={{
-                    background:
-                      burst.kind === "super"
-                        ? "var(--color-brand)"
-                        : "var(--color-like)",
-                    boxShadow: "0 12px 40px rgba(0,0,0,.28)",
-                  }}
-                >
-                  {burst.kind === "super" ? (
-                    <IconCart className="h-11 w-11 text-white" />
-                  ) : (
-                    <IconHeart className="h-11 w-11 text-white" />
-                  )}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        </AnimatePresence>
       </div>
-
-      {drops.length > 0 && <PriceDrops drops={drops} />}
-
-      <ProductSheet product={sheet} onClose={() => setSheet(null)} />
-
-      <RejectReasonSheet product={pendingReason} onAnswer={onReason} />
-
+      <ProductSheet product={product} onClose={() => setProduct(null)} />
       <FilterSheet
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         groups={facets.groups}
         maxPrice={facets.maxPrice}
         currency={facets.currency}
-        value={filters}
-        query={query}
-        onApply={applyFilters}
+        value={s.filters}
+        query={s.query}
+        onApply={(filters, query) => {
+          useStore.setState({ query });
+          s.setFilters(filters);
+          setError("");
+          setEnded(false);
+          setRetry((v) => v + 1);
+        }}
       />
-    </div>
-  );
-}
-
-/**
- * Пауза между страницами ленты: ждём загрузку, объясняем сбой — или
- * рассказываем, чем кончился поиск. Последнее раньше выглядело как сбой
- * источника: «Лента прервалась», хотя прервалось ровно ничего, просто по
- * запросу нечего показать.
- */
-function Interlude({
-  loading,
-  error,
-  query,
-  search,
-  hasFilters,
-  onRetry,
-  onClearFilters,
-  onOpenSearch,
-}: {
-  loading: boolean;
-  error: string | null;
-  query: string;
-  search: { total: number } | null;
-  hasFilters: boolean;
-  onRetry: () => void;
-  onClearFilters: () => void;
-  onOpenSearch: () => void;
-}) {
-  if (search && !query && hasFilters) {
-    /*
-     * Фильтр конечен: «Купальники» в каталоге рано или поздно кончаются.
-     * Раньше в этот момент витрина молча показывала всё подряд, не снимая
-     * подсветку с фильтра, — человек свайпал дрели, выбрав купальники.
-     */
-    const nothing = search.total === 0;
-    return (
-      <div className="card-shadow absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-[var(--radius-card)] bg-[var(--color-surface)] px-8 text-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)]">
-          <IconSliders className="h-7 w-7" />
-        </span>
-        <div>
-          <h2 className="font-display text-[19px] font-bold">
-            {nothing ? "Под фильтр ничего не подошло" : "Это всё по фильтру"}
-          </h2>
-          <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">
-            {nothing ? (
-              <>
-                На витрине нет карточек с такими условиями. Снимите часть
-                фильтров — лента вернётся.
-              </>
-            ) : (
-              <>
-                По фильтру {search.total.toLocaleString("ru-RU")}{" "}
-                {plural(search.total, "карточка", "карточки", "карточек")} — вы
-                посмотрели все.
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex w-full flex-col gap-2">
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="brand-gradient rounded-full py-3.5 text-[15px] font-bold"
-          >
-            Вернуться ко всей витрине
-          </button>
-          <button
-            type="button"
-            onClick={onOpenSearch}
-            className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-surface-2)] py-3.5 text-[15px] font-semibold"
-          >
-            <IconSliders className="h-5 w-5" /> Изменить фильтры
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (search && query) {
-    const nothing = search.total === 0;
-    return (
-      <div className="card-shadow absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-[var(--radius-card)] bg-[var(--color-surface)] px-8 text-center">
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-muted)]">
-          <IconSearch className="h-7 w-7" />
-        </span>
-        <div>
-          <h2 className="font-display text-[19px] font-bold">
-            {nothing ? "Ничего не нашлось" : "Это всё по запросу"}
-          </h2>
-          <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">
-            {nothing ? (
-              <>
-                По запросу «{query}» на витрине ничего нет. Попробуйте одно
-                слово вместо нескольких или другое название.
-              </>
-            ) : (
-              <>
-                По запросу «{query}» нашлось{" "}
-                {search.total.toLocaleString("ru-RU")}{" "}
-                {plural(search.total, "карточка", "карточки", "карточек")} — вы
-                посмотрели все.
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex w-full flex-col gap-2">
-          <button
-            type="button"
-            onClick={onOpenSearch}
-            className="brand-gradient rounded-full py-3.5 text-[15px] font-bold"
-          >
-            Изменить запрос
-          </button>
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="rounded-2xl bg-[var(--color-surface-2)] py-3.5 text-[15px] font-semibold"
-          >
-            Вернуться ко всей витрине
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="card-shadow absolute inset-0 flex flex-col items-center justify-center gap-4 rounded-[var(--radius-card)] bg-[var(--color-surface)] px-8 text-center">
-      {loading || !error ? (
-        <>
-          <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-[var(--color-line)] border-t-[var(--color-brand)]" />
-          <p className="text-[14px] text-[var(--color-muted)]">
-            Подбираем следующие карточки…
-          </p>
-        </>
-      ) : (
-        <>
+      <RejectReasonSheet
+        product={refine ? null : s.pendingReason}
+        onAnswer={s.answerReason}
+      />
+      {coach && (
+        <div
+          className="ui-coach"
+          onClick={() => setCoach(false)}
+          role="dialog"
+          aria-label="Подсказка жестов"
+        >
           <div>
-            <h2 className="font-display text-[19px] font-bold">
-              Лента прервалась
+            <h2>
+              Свайпайте карточку
+              <br />
+              или используйте кнопки
             </h2>
-            <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">
-              {error}
-            </p>
-          </div>
-          <div className="flex w-full flex-col gap-2">
-            <button
-              type="button"
-              onClick={onRetry}
-              className="brand-gradient rounded-full py-3.5 text-[15px] font-bold"
-            >
-              Попробовать снова
+            <p>Тап по фото откроет подробности товара</p>
+            <button className="ui-btn ui-white" onClick={() => setCoach(false)}>
+              Понятно
             </button>
-            {hasFilters && (
-              <button
-                type="button"
-                onClick={onClearFilters}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-surface-2)] py-3.5 text-[15px] font-semibold"
-              >
-                <IconSliders className="h-5 w-5" /> Сбросить фильтры
-              </button>
-            )}
-            <Link
-              href="/likes"
-              className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-surface-2)] py-3.5 text-[15px] font-semibold"
-            >
-              <IconHeart className="h-5 w-5 text-[var(--color-like)]" />{" "}
-              Смотреть избранное
-            </Link>
+            <small>или нажмите в любом месте экрана</small>
+            <div className="ui-coach-labels">
+              <span>← Не понравилось</span>
+              <span>↑ Купить</span>
+              <span>Понравилось →</span>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
