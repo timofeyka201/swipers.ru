@@ -9,7 +9,7 @@
 
 // v2 — перестановка интерфейса: старая оболочка в кэше показывала бы
 // прежнюю ленту с нижним рядом кнопок до ручного обновления страницы.
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL = `swiper-shell-${VERSION}`;
 const DATA = `swiper-data-${VERSION}`;
 const IMAGES = `swiper-images-${VERSION}`;
@@ -30,7 +30,15 @@ const FOREIGN_IMAGE_LIMIT = 60;
  * и закэшировать не может — а с домашнего экрана приложение могут открыть
  * сразу в метро.
  */
-const PRECACHE = [OFFLINE_URL, "/", "/likes", "/wishlist", "/cart", "/profile", "/icons/icon-192.png"];
+const PRECACHE = [
+  OFFLINE_URL,
+  "/",
+  "/likes",
+  "/wishlist",
+  "/cart",
+  "/profile",
+  "/icons/icon-192.png",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -38,7 +46,9 @@ self.addEventListener("install", (event) => {
       const cache = await caches.open(SHELL);
       // Поимённо, а не addAll: тот падает целиком, если не получилась одна
       // страница, и установка срывается вся.
-      await Promise.all(PRECACHE.map((url) => cache.add(url).catch(() => undefined)));
+      await Promise.all(
+        PRECACHE.map((url) => cache.add(url).catch(() => undefined)),
+      );
       await self.skipWaiting();
     })(),
   );
@@ -50,7 +60,11 @@ self.addEventListener("activate", (event) => {
       // Чужие версии кэша удаляем, иначе они копятся от деплоя к деплою.
       const keep = new Set([SHELL, DATA, IMAGES]);
       const names = await caches.keys();
-      await Promise.all(names.filter((n) => n.startsWith("swiper-") && !keep.has(n)).map((n) => caches.delete(n)));
+      await Promise.all(
+        names
+          .filter((n) => n.startsWith("swiper-") && !keep.has(n))
+          .map((n) => caches.delete(n)),
+      );
       await self.clients.claim();
     })(),
   );
@@ -136,9 +150,18 @@ self.addEventListener("fetch", (event) => {
 
   // Учётные записи и синхронизация обязаны ходить в сеть: кэш здесь означал бы
   // чужую сессию на общем устройстве и потерю только что сделанных изменений.
-  if (url.pathname.startsWith("/api/auth") || url.pathname.startsWith("/api/sync")) return;
+  if (
+    url.pathname.startsWith("/api/auth") ||
+    url.pathname.startsWith("/api/sync")
+  )
+    return;
 
   // Переходы по страницам: свежая версия, иначе сохранённая, иначе «нет сети».
+  if (
+    request.mode === "navigate" &&
+    (url.search || !PRECACHE.includes(url.pathname))
+  )
+    return;
   if (request.mode === "navigate") {
     event.respondWith(
       networkFirst(request, SHELL).catch(async () => {
@@ -157,7 +180,10 @@ self.addEventListener("fetch", (event) => {
       event.respondWith(cacheFirst(request, IMAGES, IMAGE_LIMIT));
       return;
     }
-    if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
+    if (
+      url.pathname.startsWith("/_next/static/") ||
+      url.pathname.startsWith("/icons/")
+    ) {
       event.respondWith(cacheFirst(request, SHELL));
       return;
     }
@@ -177,6 +203,10 @@ self.addEventListener("fetch", (event) => {
 
   // Картинки товаров лежат на чужих доменах и грузятся напрямую.
   if (request.destination === "image") {
-    event.respondWith(cacheFirst(request, IMAGES, FOREIGN_IMAGE_LIMIT).catch(() => Response.error()));
+    event.respondWith(
+      cacheFirst(request, IMAGES, FOREIGN_IMAGE_LIMIT).catch(() =>
+        Response.error(),
+      ),
+    );
   }
 });
