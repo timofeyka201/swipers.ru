@@ -1,3 +1,4 @@
+import { readJson } from "@/lib/read-json";
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider, defaultProvider, PROVIDERS } from "@/lib/providers";
 import type { TasteHint } from "@/lib/taste";
@@ -16,7 +17,12 @@ type Body = {
   query?: string;
   cursor?: string | null;
   seed?: number;
-  filters?: { group?: string; categories?: string[]; maxPrice?: number; onlyDiscount?: boolean };
+  filters?: {
+    group?: string;
+    categories?: string[];
+    maxPrice?: number;
+    onlyDiscount?: boolean;
+  };
   hint?: TasteHint;
 };
 
@@ -28,12 +34,15 @@ type Body = {
 export async function POST(req: NextRequest) {
   let body: Body;
   try {
-    body = (await req.json()) as Body;
+    body = (await readJson(req, 32768)) as Body;
   } catch {
-    return NextResponse.json({ error: "Некорректное тело запроса" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Некорректное тело запроса" },
+      { status: 400 },
+    );
   }
 
-  const query = (body.query || "").trim();
+  const query = (typeof body.query === "string" ? body.query : "").trim();
   const seed = Number.isFinite(body.seed) ? Number(body.seed) : 1;
 
   /*
@@ -48,9 +57,13 @@ export async function POST(req: NextRequest) {
    * клиента взять её мы тоже не исполняем, если настоящая витрина готова.
    */
   const live = PROVIDERS.some((p) => !p.fallbackOnly && p.ready());
-  const usable = PROVIDERS.filter((p) => p.ready() && (!live || !p.fallbackOnly));
+  const usable = PROVIDERS.filter(
+    (p) => p.ready() && (!live || !p.fallbackOnly),
+  );
   const asked = body.provider ? getProvider(body.provider) : defaultProvider();
-  const requested = usable.includes(asked) ? asked : (usable[0] ?? defaultProvider());
+  const requested = usable.includes(asked)
+    ? asked
+    : (usable[0] ?? defaultProvider());
 
   // Порядок попыток: запрошенный источник, затем остальные пригодные.
   const chain = [requested, ...usable.filter((p) => p.id !== requested.id)];
@@ -71,7 +84,13 @@ export async function POST(req: NextRequest) {
     // Курсор принадлежит конкретному источнику — при переключении начинаем сначала.
     const cursor = provider.id === requested.id ? (body.cursor ?? null) : null;
     try {
-      const page = await provider.page({ query, cursor, seed, filters: body.filters, hint: body.hint });
+      const page = await provider.page({
+        query,
+        cursor,
+        seed,
+        filters: body.filters,
+        hint: body.hint,
+      });
       /*
        * «Под фильтром показали всё» — это ответ витрины, а не её молчание.
        * Если пойти дальше по цепочке, следом ответит офлайн-подборка, и
@@ -96,8 +115,11 @@ export async function POST(req: NextRequest) {
         // Запоминаем самый богатый ответ: следом в цепочке стоит офлайн-
         // подборка на дюжину карточек, и её ноль не должен затирать «по
         // запросу нашлось сорок, вы их посмотрели».
-        if (query && (page.total ?? 0) >= (empty?.total ?? -1)) empty = { provider, total: page.total ?? 0 };
-        problems.push(`${provider.label}: пусто по запросу «${query || "витрина"}»`);
+        if (query && (page.total ?? 0) >= (empty?.total ?? -1))
+          empty = { provider, total: page.total ?? 0 };
+        problems.push(
+          `${provider.label}: пусто по запросу «${query || "витрина"}»`,
+        );
         continue;
       }
       // Сколько сервер думал над страницей: отсюда берутся p50/p95 и ответ на
@@ -120,7 +142,9 @@ export async function POST(req: NextRequest) {
       };
       return NextResponse.json(result);
     } catch (e) {
-      problems.push(`${provider.label}: ${e instanceof Error ? e.message : "ошибка"}`);
+      problems.push(
+        `${provider.label}: ${e instanceof Error ? e.message : "ошибка"}`,
+      );
     }
   }
 
@@ -137,7 +161,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result);
   }
 
-  void logEvent("feed", { ms: Date.now() - startedAt, n: 0, error: true, search: !!query });
+  void logEvent("feed", {
+    ms: Date.now() - startedAt,
+    n: 0,
+    error: true,
+    search: !!query,
+  });
   return NextResponse.json(
     { error: "Ни один источник не ответил", problems },
     { status: 502 },
