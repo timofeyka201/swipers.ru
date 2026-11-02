@@ -29,8 +29,12 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       ? []
       : selected.flatMap(
           (title) =>
-            groups.find((g) => g.title === title || g.title.includes(title))
-              ?.categories ?? [title],
+            groups.find(
+              (g) =>
+                g.title === title ||
+                g.title.includes(title) ||
+                (title === "Техника" && g.title.includes("Электроника")),
+            )?.categories ?? [title],
         );
     const s = useStore.getState();
     s.finishTaste(picked);
