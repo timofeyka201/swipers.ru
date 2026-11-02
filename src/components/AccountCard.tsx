@@ -18,28 +18,25 @@ export default function AccountCard() {
   const account = useStore((s) => s.account);
   const setAccount = useStore((s) => s.setAccount);
   const [authOpen, setAuthOpen] = useState(false);
-  const [verifySending, setVerifySending] = useState(false);
 
   return (
     <>
       {account ? (
-        <div className="soft-shadow flex items-center gap-3 rounded-2xl bg-[var(--color-surface)] px-4 py-3.5">
+        <div className="account-identity soft-shadow flex items-center gap-3">
           <span className="brand-gradient flex h-10 w-10 shrink-0 items-center justify-center rounded-full">
             <IconUser className="h-5 w-5" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-semibold">
-              {account.name || account.email}
+            <span className="block truncate font-display text-[25px] leading-tight">
+              {account.nickname ? "@" + account.nickname : "Выберите свой ник"}
             </span>
             <span className="block truncate text-[12px] text-[var(--color-muted)]">
-              {account.name
-                ? account.email
-                : "Избранное и корзина синхронизируются"}
+              {account.email}
             </span>
           </span>
           <button
             type="button"
-            aria-label="Выйти"
+            aria-label="Выйти из аккаунта"
             title="Выйти"
             onClick={async () => {
               // Локальные данные не трогаем: выход — не удаление.
@@ -79,6 +76,7 @@ export default function AccountCard() {
           <IconChevron className="h-5 w-5 shrink-0 text-[var(--color-muted)]" />
         </button>
       )}
+
       <AuthSheet open={authOpen} onClose={() => setAuthOpen(false)} />
     </>
   );

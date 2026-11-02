@@ -34,25 +34,20 @@ export async function POST(req: Request) {
           { status: 400 },
         );
       const store = authStore();
-      let id = await store.userIdByEmail(email);
-      if (!id) {
-        const user = {
-          id: randomUUID(),
-          email,
-          emailVerified: true,
-          createdAt: new Date().toISOString(),
-        };
-        try {
-          await store.createUser(user);
-          id = user.id;
-        } catch (error) {
-          if (!(error instanceof Error) || error.message !== "EMAIL_TAKEN")
-            throw error;
-          id = await store.userIdByEmail(email);
-        }
-      }
+      const id = await store.userIdByEmail(email);
       const user = id ? await store.getUser(id) : null;
-      if (!user) throw new Error("USER_MISSING");
+      if (!user?.nickname) {
+        const registration = randomUUID();
+        await store.putToken(
+          "signup:" + registration,
+          JSON.stringify({ email, expires: Date.now() + 600000 }),
+          600,
+        );
+        return NextResponse.json(
+          { registration, suggestedNickname: user?.name ?? "" },
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
       const { passwordHash: _password, ...clean } = user;
       await store.updateUser({ ...clean, emailVerified: true });
       await startSession(user.id);

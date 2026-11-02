@@ -232,7 +232,29 @@ test("email login creates an account, sets a session and protects sync revisions
     const code = /Код входа: (\d{6})/.exec(letter)[1];
     const verified = await route.POST(request({ challenge, code }));
     assert.equal(verified.status, 200);
-    const user = (await verified.json()).user;
+    const pending = await verified.json();
+    assert.ok(pending.registration);
+    assert.equal(cookies.get("swiper_session"), undefined);
+    assert.equal(await store.userIdByEmail("route@example.com"), null);
+    const nicknameRoute = require("../src/app/api/auth/nickname/route.ts");
+    const completed = await nicknameRoute.POST(
+      request({ registration: pending.registration, nickname: "Route_User" }),
+    );
+    assert.equal(completed.status, 200);
+    const user = (await completed.json()).user;
+    assert.equal(user.nickname, "route_user");
+    assert.equal(
+      (await nicknameRoute.POST(request({ nickname: "different_nick" })))
+        .status,
+      409,
+    );
+    const lookup = require("../src/app/api/users/route.ts");
+    const found = await lookup.GET(
+      new Request("http://local/api/users?nickname=ROUTE_USER"),
+    );
+    const publicUser = (await found.json()).user;
+    assert.equal(publicUser.nickname, "route_user");
+    assert.equal(publicUser.email, undefined);
     assert.equal(user.email, "route@example.com");
     assert.ok(cookies.get("swiper_session"));
     const repeat = await route.POST(request({ challenge, code }));
@@ -291,4 +313,44 @@ test("logging out clears identity and service state before a second account logs
     .getState()
     .setAccount({ id: "b", email: "b@example.com", createdAt: "" });
   assert.deepEqual(useStore.getState().liked, []);
+});
+
+test("nicknames normalize case and reject invalid identifiers", () => {
+  const {
+    normalizeNickname,
+    nicknameProblem,
+  } = require("../src/lib/auth/nickname.ts");
+  assert.equal(normalizeNickname(" @Kotletkad "), "kotletkad");
+  for (const value of ["ab", "1user", "друг", "has space", "a".repeat(25)])
+    assert.ok(nicknameProblem(value));
+  assert.equal(nicknameProblem("Good_name12"), null);
+});
+test("only one account can claim a nickname and it cannot be changed", async () => {
+  await store.createUser({
+    id: "nick-a",
+    email: "nick-a@example.com",
+    createdAt: "",
+  });
+  await store.createUser({
+    id: "nick-b",
+    email: "nick-b@example.com",
+    createdAt: "",
+  });
+  const results = await Promise.allSettled([
+    store.claimNickname("nick-a", "unique_user"),
+    store.claimNickname("nick-b", "unique_user"),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  const winner = results.find((r) => r.status === "fulfilled").value;
+  await assert.rejects(
+    store.claimNickname(winner.id, "another_user"),
+    /NICKNAME_LOCKED/,
+  );
+  assert.equal(
+    (await store.claimNickname(winner.id, "unique_user")).nickname,
+    "unique_user",
+  );
+  await store.updateUser({ ...winner, name: "changed", nickname: "changed" });
+  assert.equal((await store.getUser(winner.id)).nickname, "unique_user");
+  assert.equal(await store.getDoc("nickname:unique_user"), winner.id);
 });

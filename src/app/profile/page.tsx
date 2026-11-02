@@ -1,5 +1,6 @@
 "use client";
 import Nickname from "@/components/Nickname";
+import FindFriend from "@/components/FindFriend";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -78,6 +79,7 @@ export default function ProfilePage() {
         <section>
           <AccountCard />
           <Nickname />
+          <FindFriend />
         </section>
 
         <section>

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Sheet from "./Sheet";
+import Nickname from "./Nickname";
 import { useStore } from "@/lib/store";
 import { syncOnLogin } from "@/lib/sync";
 export default function AuthSheet({
@@ -10,6 +11,9 @@ export default function AuthSheet({
   open: boolean;
   onClose: () => void;
 }) {
+  const account = useStore((s) => s.account);
+  const [registration, setRegistration] = useState("");
+  const [suggestedNickname, setSuggestedNickname] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [challenge, setChallenge] = useState("");
@@ -27,12 +31,18 @@ export default function AuthSheet({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Не удалось войти");
+      if (data.registration) {
+        setRegistration(data.registration);
+        setSuggestedNickname(data.suggestedNickname ?? "");
+        setChallenge("");
+        return;
+      }
       if (data.user) {
         useStore.getState().setAccount(data.user);
         await syncOnLogin();
         setCode("");
         setChallenge("");
-        onClose();
+        if (data.user.nickname) onClose();
       } else {
         setChallenge(data.challenge);
         setCode("");
@@ -43,6 +53,25 @@ export default function AuthSheet({
       setBusy(false);
     }
   }
+  if (registration)
+    return (
+      <Sheet open={open} title="Создайте свой никнейм" onClose={onClose}>
+        <Nickname
+          registration={registration}
+          suggestedNickname={suggestedNickname}
+          onComplete={() => {
+            setRegistration("");
+            onClose();
+          }}
+        />
+      </Sheet>
+    );
+  if (account && !account.nickname)
+    return (
+      <Sheet open={open} title="Завершите регистрацию" onClose={onClose}>
+        <Nickname onComplete={onClose} />
+      </Sheet>
+    );
   return (
     <Sheet open={open} title="Вход в Swiper" onClose={onClose}>
       <form
@@ -61,7 +90,7 @@ export default function AuthSheet({
           <label className="block">
             Почта
             <input
-              className="mt-2 w-full rounded-xl border p-3 text-black"
+              className="field auth-field"
               type="email"
               autoComplete="email"
               required
@@ -86,14 +115,12 @@ export default function AuthSheet({
           </label>
         )}
         {error && <p role="alert">{error}</p>}
-        <button
-          className="brand-gradient w-full rounded-xl p-3"
-          disabled={busy}
-        >
+        <button className="action-primary" disabled={busy}>
           {busy ? "Подождите…" : challenge ? "Войти" : "Получить код"}
         </button>
         {challenge && (
           <button
+            className="action-secondary"
             type="button"
             disabled={busy}
             onClick={() => {
