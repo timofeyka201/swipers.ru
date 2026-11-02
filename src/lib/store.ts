@@ -38,6 +38,7 @@ export type Account = {
   id: string;
   email: string;
   name?: string;
+  nickname?: string;
   createdAt: string;
   emailVerified?: boolean;
 };
