@@ -129,6 +129,8 @@ function merge(local: SyncedProfile, remote: SyncedProfile): SyncedProfile {
   };
 
   return {
+    purchases: { ...(stale.purchases ?? {}), ...(fresh.purchases ?? {}) },
+    priceAlerts: fresh.priceAlerts ?? true,
     liked: byId(remote.liked ?? [], local.liked ?? []),
     wishlist: byId(remote.wishlist ?? [], local.wishlist ?? []),
     cart: (() => {
