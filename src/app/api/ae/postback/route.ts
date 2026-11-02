@@ -1,3 +1,4 @@
+import { readJson } from "@/lib/read-json";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { NextResponse } from "next/server";
@@ -51,7 +52,8 @@ const FIELDS = [
 
 async function record(url: URL): Promise<NextResponse> {
   const secret = process.env.AE_POSTBACK_SECRET?.trim();
-  if (!secret) return NextResponse.json({ error: "Постбэк не настроен" }, { status: 503 });
+  if (!secret)
+    return NextResponse.json({ error: "Постбэк не настроен" }, { status: 503 });
   if (url.searchParams.get("key") !== secret) {
     // Молча 404, а не 403: отвечать «секрет неверный» — значит подсказывать,
     // что адрес вообще существует.
@@ -71,8 +73,10 @@ async function record(url: URL): Promise<NextResponse> {
     await appendFile(path, JSON.stringify(row) + "\n");
   } catch (e) {
     console.error("Постбэк не записан:", e instanceof Error ? e.message : e);
-    // Площадке отвечаем успехом: повторять ей нечего, а разбираться с диском
-    // будем сами по логу службы.
+    return NextResponse.json(
+      { error: "Хранилище временно недоступно" },
+      { status: 503 },
+    );
   }
 
   /*
@@ -85,7 +89,7 @@ async function record(url: URL): Promise<NextResponse> {
     return Number.isFinite(n) ? n : undefined;
   };
   await logEvent("order", {
-    order: row.order ?? row.order_number,
+    order: row.order ?? row.order_number ?? row.order_id,
     status: row.status ?? row.order_status,
     product: row.product ?? row.product_id,
     price: money(row.price),
@@ -101,5 +105,22 @@ export async function GET(req: Request) {
 
 /** Некоторые площадки шлют постбэк POST-ом — принимаем оба способа. */
 export async function POST(req: Request) {
-  return record(new URL(req.url));
+  const url = new URL(req.url);
+  try {
+    const type = req.headers.get("content-type") ?? "";
+    const body = type.includes("application/json")
+      ? await readJson(req, 32768)
+      : Object.fromEntries(new URLSearchParams(await req.text()));
+    if (body && typeof body === "object")
+      for (const [key, value] of Object.entries(body))
+        if (
+          (FIELDS.includes(key) || key === "key") &&
+          !url.searchParams.has(key) &&
+          typeof value !== "object"
+        )
+          url.searchParams.set(key, String(value));
+  } catch {
+    return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
+  }
+  return record(url);
 }
