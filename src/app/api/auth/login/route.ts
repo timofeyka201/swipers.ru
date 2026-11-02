@@ -1,59 +1,7 @@
 import { NextResponse } from "next/server";
-import { authStore } from "@/lib/auth/store";
-import { clearFailures, clientKey, noteFailure, startSession, toPublic, tooManyAttempts } from "@/lib/auth/session";
-import { normalizeEmail, verifyPassword } from "@/lib/auth/password";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export async function POST(req: Request) {
-  const key = clientKey(req);
-  if (tooManyAttempts(key)) {
-    return NextResponse.json({ error: "Слишком много попыток. Подождите несколько минут." }, { status: 429 });
-  }
-
-  let body: { email?: string; password?: string };
-  try {
-    body = (await req.json()) as typeof body;
-  } catch {
-    return NextResponse.json({ error: "Некорректный запрос" }, { status: 400 });
-  }
-
-  const email = normalizeEmail(String(body.email ?? ""));
-  const password = String(body.password ?? "");
-
-  const store = authStore();
-  let user;
-  try {
-    const id = email ? await store.userIdByEmail(email) : null;
-    user = id ? await store.getUser(id) : null;
-  } catch (e) {
-    console.error("Вход: хранилище недоступно —", e);
-    return NextResponse.json(
-      { error: "Не удалось связаться с хранилищем учётных записей." },
-      { status: 503 },
-    );
-  }
-
-  // Один и тот же ответ на «нет такой почты» и «неверный пароль»:
-  // иначе форма превращается в проверку, кто здесь зарегистрирован.
-  const ok = user ? await verifyPassword(password, user.passwordHash) : false;
-  if (!user || !ok) {
-    noteFailure(key);
-    return NextResponse.json({ error: "Неверная почта или пароль" }, { status: 401 });
-  }
-
-  // Пароль верный, но почта не подтверждена. Отвечаем отдельным кодом, чтобы
-  // форма предложила выслать письмо заново, а не твердила «неверный пароль».
-  if (!user.emailVerified) {
-    clearFailures(key);
-    return NextResponse.json(
-      { error: "Почта не подтверждена. Мы отправили письмо со ссылкой — перейдите по ней.", unverified: true },
-      { status: 403 },
-    );
-  }
-
-  clearFailures(key);
-  await startSession(user.id);
-  return NextResponse.json({ user: toPublic(user) });
+export async function POST() {
+  return NextResponse.json(
+    { error: "Войдите по коду из письма" },
+    { status: 410 },
+  );
 }
