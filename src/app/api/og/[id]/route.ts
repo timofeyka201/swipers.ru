@@ -1,3 +1,4 @@
+import { safeFetch } from "@/lib/safe-fetch";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NextResponse } from "next/server";
@@ -38,23 +39,30 @@ async function photo(src?: string): Promise<Buffer | null> {
 
   if (!/^https?:\/\//.test(src)) return null;
   try {
-    const res = await fetch(src, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT),
-      headers: { "User-Agent": "Mozilla/5.0", Accept: "image/*" },
-    });
-    if (!res.ok) return null;
-    return Buffer.from(await res.arrayBuffer());
+    const res = await safeFetch(src, 4 * 1024 * 1024, FETCH_TIMEOUT);
+    if (!res.type.startsWith("image/")) return null;
+    return res.body;
   } catch {
     return null;
   }
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
   const { id } = await params;
   const product = productById(id);
   const source = await photo(product?.images?.[0]);
 
-  const canvas = sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: BACKGROUND } });
+  const canvas = sharp({
+    create: {
+      width: WIDTH,
+      height: HEIGHT,
+      channels: 3,
+      background: BACKGROUND,
+    },
+  });
 
   try {
     const body = source
@@ -76,11 +84,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     console.error("Превью не собрано:", e instanceof Error ? e.message : e);
     // Пустая подложка лучше битой картинки: мессенджер покажет хотя бы
     // название и цену из разметки.
-    const body = await sharp({ create: { width: WIDTH, height: HEIGHT, channels: 3, background: BACKGROUND } })
+    const body = await sharp({
+      create: {
+        width: WIDTH,
+        height: HEIGHT,
+        channels: 3,
+        background: BACKGROUND,
+      },
+    })
       .jpeg()
       .toBuffer();
     return new NextResponse(new Uint8Array(body), {
-      headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=300" },
+      headers: {
+        "Content-Type": "image/jpeg",
+        "Cache-Control": "public, max-age=300",
+      },
     });
   }
 }
