@@ -31,6 +31,7 @@ export type PublicUser = {
   id: string;
   email: string;
   name?: string;
+  nickname?: string;
   createdAt: string;
   emailVerified: boolean;
 };
@@ -38,7 +39,8 @@ export type PublicUser = {
 export const toPublic = (u: UserRecord): PublicUser => ({
   id: u.id,
   email: u.email,
-  name: u.name,
+  name: u.nickname || u.name,
+  nickname: u.nickname,
   createdAt: u.createdAt,
   emailVerified: !!u.emailVerified,
 });
