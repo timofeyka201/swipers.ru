@@ -12,12 +12,17 @@ import ProductSheet from "@/components/ProductSheet";
 import SwipeCard from "@/components/SwipeCard";
 import { prefetchImage } from "@/components/Img";
 import TopBar from "@/components/TopBar";
-import { IconCart, IconHeart, IconSearch, IconSliders } from "@/components/Icons";
+import {
+  IconCart,
+  IconHeart,
+  IconSearch,
+  IconSliders,
+} from "@/components/Icons";
 import { toast } from "@/components/Toast";
 import { loadNextPage } from "@/lib/feed";
 import { isFirstLaunch, track } from "@/lib/stat";
 import { plural } from "@/lib/money";
-import { DAILY_GOAL, useHydrated, useStore, type Decision } from "@/lib/store";
+import { useHydrated, useStore, type Decision } from "@/lib/store";
 import type { ExitWay } from "@/components/SwipeCard";
 import type { GroupFacet } from "@/lib/providers/types";
 import type { Product } from "@/lib/types";
@@ -30,17 +35,24 @@ const PREFETCH_AT = 8;
 /** Сколько первых свайпов подсвечивать зоны тапа. */
 const HINT_SWIPES = 3;
 
-type Facets = { categories: string[]; groups: GroupFacet[]; tags: string[]; maxPrice: number; currency: string };
+type Facets = {
+  categories: string[];
+  groups: GroupFacet[];
+  tags: string[];
+  maxPrice: number;
+  currency: string;
+};
 
 function haptic(pattern: number | number[]) {
-  if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate(pattern);
+  if (typeof navigator !== "undefined" && "vibrate" in navigator)
+    navigator.vibrate(pattern);
 }
 
 export default function DeckPage() {
   const hydrated = useHydrated();
   const deck = useStore((s) => s.deck);
   const index = useStore((s) => s.index);
-  const stats = useStore((s) => s.stats);
+  const seenCount = useStore((s) => s.seen.length);
   const rates = useStore((s) => s.rates);
   const cursor = useStore((s) => s.cursor);
   const filters = useStore((s) => s.filters);
@@ -79,10 +91,17 @@ export default function DeckPage() {
   /** По какому запросу уже записали итог поиска в статистику. */
   const searchTracked = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [facets, setFacets] = useState<Facets>({ categories: [], groups: [], tags: [], maxPrice: 0, currency: "RUB" });
-  const [burst, setBurst] = useState<{ id: number; kind: Decision } | null>(null);
+  const [facets, setFacets] = useState<Facets>({
+    categories: [],
+    groups: [],
+    tags: [],
+    maxPrice: 0,
+    currency: "RUB",
+  });
+  const [burst, setBurst] = useState<{ id: number; kind: Decision } | null>(
+    null,
+  );
   const loadingRef = useRef(false);
-  const goalCelebrated = useRef(false);
 
   const visible = deck.slice(index, index + VISIBLE);
   const remaining = Math.max(0, deck.length - index);
@@ -93,7 +112,9 @@ export default function DeckPage() {
    * прямоугольником, пока грузится фотография.
    */
   useEffect(() => {
-    for (const [i, product] of deck.slice(index + VISIBLE, index + VISIBLE + PREFETCH).entries()) {
+    for (const [i, product] of deck
+      .slice(index + VISIBLE, index + VISIBLE + PREFETCH)
+      .entries()) {
       prefetchImage(product.images[0]);
       // У ближайших карточек берём заодно второй снимок: к моменту, когда
       // карточка окажется наверху и по ней тапнут, он уже будет на месте.
@@ -108,7 +129,11 @@ export default function DeckPage() {
   const pricesChecked = useRef(false);
   useEffect(() => {
     if (!hydrated || pricesChecked.current) return;
-    const ids = [...new Set([...liked, ...wishlist, ...cart.map((c) => c.product)].map((p) => p.id))];
+    const ids = [
+      ...new Set(
+        [...liked, ...wishlist, ...cart.map((c) => c.product)].map((p) => p.id),
+      ),
+    ];
     if (!ids.length) return;
     pricesChecked.current = true;
     fetch("/api/prices", {
@@ -134,8 +159,18 @@ export default function DeckPage() {
       typeof window !== "undefined" && window.matchMedia
         ? window.matchMedia("(display-mode: standalone)").matches
         : false;
-    const { onboarded: seen, tasted: quizzed, stats: st } = useStore.getState();
-    track("open", { first, standalone, onboarded: seen, tasted: quizzed, swipes: st.swipes });
+    const {
+      onboarded: seen,
+      tasted: quizzed,
+      seen: viewed,
+    } = useStore.getState();
+    track("open", {
+      first,
+      standalone,
+      onboarded: seen,
+      tasted: quizzed,
+      swipes: viewed.length,
+    });
   }, []);
 
   useEffect(() => {
@@ -148,7 +183,10 @@ export default function DeckPage() {
         // и приложение продолжало спрашивать карточки у неё. Витрина есть —
         // пересобираем ленту из неё.
         const { deck, query: q, startFeed } = useStore.getState();
-        if ((d.catalog?.total ?? 0) > 0 && deck.some((p) => p.id.startsWith("demo-"))) {
+        if (
+          (d.catalog?.total ?? 0) > 0 &&
+          deck.some((p) => p.id.startsWith("demo-"))
+        ) {
           startFeed({ provider: null, query: q });
         }
       })
@@ -167,7 +205,7 @@ export default function DeckPage() {
       // первых двадцати карточках против сотой.
       track("swipe", {
         d,
-        n: useStore.getState().stats.swipes,
+        n: useStore.getState().seen.length,
         category: product.category,
         group: product.group,
         why: product.why,
@@ -213,7 +251,7 @@ export default function DeckPage() {
   );
 
   const onUndo = useCallback(() => {
-    track("undo", { n: useStore.getState().stats.swipes });
+    track("undo", { n: useStore.getState().seen.length });
     undo();
   }, [undo]);
 
@@ -234,7 +272,8 @@ export default function DeckPage() {
   // Клавиатура: на десктопе свайпать так же быстро, как пальцем.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (sheet || filtersOpen || !onboarded || !tasted || pendingReason) return;
+      if (sheet || filtersOpen || !onboarded || !tasted || pendingReason)
+        return;
       if (e.key === "ArrowRight") onDecide("like");
       else if (e.key === "ArrowLeft") onDecide("dislike");
       else if (e.key === "ArrowUp") onDecide("super");
@@ -247,7 +286,17 @@ export default function DeckPage() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onDecide, onUndo, sheet, filtersOpen, onboarded, tasted, pendingReason, deck, index]);
+  }, [
+    onDecide,
+    onUndo,
+    sheet,
+    filtersOpen,
+    onboarded,
+    tasted,
+    pendingReason,
+    deck,
+    index,
+  ]);
 
   /** Бесконечная лента: запас карточек пополняется заранее. */
   useEffect(() => {
@@ -267,12 +316,22 @@ export default function DeckPage() {
          */
         const ms = Date.now() - startedAt;
         if (ms > 1500 || (res.tries ?? 1) > 1 || !res.ok) {
-          track("wait", { ms, tries: res.tries ?? 1, ok: res.ok, search: !!query });
+          track("wait", {
+            ms,
+            tries: res.tries ?? 1,
+            ok: res.ok,
+            search: !!query,
+          });
         }
         // Итог поиска — один раз на запрос, а не на каждую его страницу.
         if (query && searchTracked.current !== query) {
           searchTracked.current = query;
-          track("search", { q: query.slice(0, 64), found: res.total ?? 0, loose: !!res.loose, noMore: !!res.noMore });
+          track("search", {
+            q: query.slice(0, 64),
+            found: res.total ?? 0,
+            loose: !!res.loose,
+            noMore: !!res.noMore,
+          });
         }
         if (!res.ok) {
           setFeedError(res.error ?? "Источник не ответил");
@@ -294,14 +353,6 @@ export default function DeckPage() {
       });
   }, [hydrated, remaining, feedError, cursor, query]);
 
-  useEffect(() => {
-    if (stats.daySwipes >= DAILY_GOAL && !goalCelebrated.current) {
-      goalCelebrated.current = true;
-      toast(`Дневная цель выполнена: ${DAILY_GOAL} карточек`, "like");
-      haptic([16, 60, 16]);
-    }
-  }, [stats.daySwipes]);
-
   const group = filters.group ?? null;
 
   /**
@@ -311,7 +362,10 @@ export default function DeckPage() {
    * получить пустую ленту.
    */
   const groupCategories = useMemo(
-    () => (group ? (facets.groups.find((g) => g.title === group)?.categories ?? []) : facets.categories),
+    () =>
+      group
+        ? (facets.groups.find((g) => g.title === group)?.categories ?? [])
+        : facets.categories,
     [group, facets],
   );
 
@@ -322,8 +376,12 @@ export default function DeckPage() {
      * возврата ко всем разделам — в строке их уже не видно, а лента по-
      * прежнему показывает одни купальники.
      */
-    const inside = g ? (facets.groups.find((x) => x.title === g)?.categories ?? []) : [];
-    const categories = (filters.categories ?? []).filter((c) => inside.includes(c));
+    const inside = g
+      ? (facets.groups.find((x) => x.title === g)?.categories ?? [])
+      : [];
+    const categories = (filters.categories ?? []).filter((c) =>
+      inside.includes(c),
+    );
     track("filter", { what: "group", group: g ?? "", from: "bar" });
     setFilters({ ...filters, group: g ?? undefined, categories });
     setFeedError(null);
@@ -332,8 +390,17 @@ export default function DeckPage() {
 
   const toggleCategory = (c: string) => {
     const list = filters.categories ?? [];
-    track("filter", { what: "category", category: c, on: !list.includes(c), group: group ?? "", from: "bar" });
-    setFilters({ ...filters, categories: list.includes(c) ? list.filter((x) => x !== c) : [...list, c] });
+    track("filter", {
+      what: "category",
+      category: c,
+      on: !list.includes(c),
+      group: group ?? "",
+      from: "bar",
+    });
+    setFilters({
+      ...filters,
+      categories: list.includes(c) ? list.filter((x) => x !== c) : [...list, c],
+    });
     setFeedError(null);
     setSearch(null);
   };
@@ -363,14 +430,21 @@ export default function DeckPage() {
   }
 
   const extraFilters =
-    (filters.maxPrice !== undefined ? 1 : 0) + (filters.onlyDiscount ? 1 : 0) + (query ? 1 : 0) + (group ? 1 : 0);
+    (filters.maxPrice !== undefined ? 1 : 0) +
+    (filters.onlyDiscount ? 1 : 0) +
+    (query ? 1 : 0) +
+    (group ? 1 : 0);
 
   return (
     <div className="flex flex-1 flex-col">
       <AnimatePresence>
         {!onboarded && <Onboarding onDone={onOnboarded} />}
         {onboarded && !tasted && facets.categories.length > 0 && (
-          <TasteQuiz categories={facets.categories} tags={facets.tags} onDone={onQuizDone} />
+          <TasteQuiz
+            categories={facets.categories}
+            tags={facets.tags}
+            onDone={onQuizDone}
+          />
         )}
       </AnimatePresence>
 
@@ -399,7 +473,7 @@ export default function DeckPage() {
                   product={product}
                   rates={rates}
                   depth={i}
-                  showHint={i === 0 && stats.swipes < HINT_SWIPES}
+                  showHint={i === 0 && seenCount < HINT_SWIPES}
                   onDecide={onDecide}
                   onOpen={() => setSheet(product)}
                   onUndo={onUndo}
@@ -438,7 +512,10 @@ export default function DeckPage() {
                 <span
                   className="flex h-24 w-24 items-center justify-center rounded-full"
                   style={{
-                    background: burst.kind === "super" ? "var(--color-brand)" : "var(--color-like)",
+                    background:
+                      burst.kind === "super"
+                        ? "var(--color-brand)"
+                        : "var(--color-like)",
                     boxShadow: "0 12px 40px rgba(0,0,0,.28)",
                   }}
                 >
@@ -470,7 +547,6 @@ export default function DeckPage() {
         query={query}
         onApply={applyFilters}
       />
-
     </div>
   );
 }
@@ -518,11 +594,15 @@ function Interlude({
           </h2>
           <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">
             {nothing ? (
-              <>На витрине нет карточек с такими условиями. Снимите часть фильтров — лента вернётся.</>
+              <>
+                На витрине нет карточек с такими условиями. Снимите часть
+                фильтров — лента вернётся.
+              </>
             ) : (
               <>
                 По фильтру {search.total.toLocaleString("ru-RU")}{" "}
-                {plural(search.total, "карточка", "карточки", "карточек")} — вы посмотрели все.
+                {plural(search.total, "карточка", "карточки", "карточек")} — вы
+                посмотрели все.
               </>
             )}
           </p>
@@ -561,19 +641,25 @@ function Interlude({
           <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">
             {nothing ? (
               <>
-                По запросу «{query}» на витрине ничего нет. Попробуйте одно слово вместо нескольких
-                или другое название.
+                По запросу «{query}» на витрине ничего нет. Попробуйте одно
+                слово вместо нескольких или другое название.
               </>
             ) : (
               <>
-                По запросу «{query}» нашлось {search.total.toLocaleString("ru-RU")}{" "}
-                {plural(search.total, "карточка", "карточки", "карточек")} — вы посмотрели все.
+                По запросу «{query}» нашлось{" "}
+                {search.total.toLocaleString("ru-RU")}{" "}
+                {plural(search.total, "карточка", "карточки", "карточек")} — вы
+                посмотрели все.
               </>
             )}
           </p>
         </div>
         <div className="flex w-full flex-col gap-2">
-          <button type="button" onClick={onOpenSearch} className="brand-gradient rounded-full py-3.5 text-[15px] font-bold">
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="brand-gradient rounded-full py-3.5 text-[15px] font-bold"
+          >
             Изменить запрос
           </button>
           <button
@@ -593,13 +679,19 @@ function Interlude({
       {loading || !error ? (
         <>
           <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-[var(--color-line)] border-t-[var(--color-brand)]" />
-          <p className="text-[14px] text-[var(--color-muted)]">Подбираем следующие карточки…</p>
+          <p className="text-[14px] text-[var(--color-muted)]">
+            Подбираем следующие карточки…
+          </p>
         </>
       ) : (
         <>
           <div>
-            <h2 className="font-display text-[19px] font-bold">Лента прервалась</h2>
-            <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">{error}</p>
+            <h2 className="font-display text-[19px] font-bold">
+              Лента прервалась
+            </h2>
+            <p className="mt-1.5 text-[14px] leading-snug text-[var(--color-muted)]">
+              {error}
+            </p>
           </div>
           <div className="flex w-full flex-col gap-2">
             <button
@@ -622,7 +714,8 @@ function Interlude({
               href="/likes"
               className="flex items-center justify-center gap-2 rounded-2xl bg-[var(--color-surface-2)] py-3.5 text-[15px] font-semibold"
             >
-              <IconHeart className="h-5 w-5 text-[var(--color-like)]" /> Смотреть избранное
+              <IconHeart className="h-5 w-5 text-[var(--color-like)]" />{" "}
+              Смотреть избранное
             </Link>
           </div>
         </>

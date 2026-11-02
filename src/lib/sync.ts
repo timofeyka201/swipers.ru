@@ -166,15 +166,6 @@ function merge(local: SyncedProfile, remote: SyncedProfile): SyncedProfile {
       phone: fresh.person?.phone || stale.person?.phone || "",
     },
     orders: byId(remote.orders ?? [], local.orders ?? []).slice(0, 60),
-    stats: {
-      ...fresh.stats,
-      swipes: Math.max(local.stats?.swipes ?? 0, remote.stats?.swipes ?? 0),
-      likes: Math.max(local.stats?.likes ?? 0, remote.stats?.likes ?? 0),
-      bestStreak: Math.max(
-        local.stats?.bestStreak ?? 0,
-        remote.stats?.bestStreak ?? 0,
-      ),
-    },
     tasted: (local.tasted ?? false) || (remote.tasted ?? false),
     updatedAt: Date.now(),
   };

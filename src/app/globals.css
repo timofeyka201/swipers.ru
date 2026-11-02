@@ -459,3 +459,9 @@ body {
   font-size: 13px;
   color: var(--color-brand);
 }
+
+/* The combined nickname field owns the single visible focus indicator. */
+.nickname-field input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}

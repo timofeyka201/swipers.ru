@@ -23,15 +23,6 @@ export type CartItem = { product: Product; qty: number; sku?: string };
 export type Decision = "like" | "dislike" | "super";
 type HistoryEntry = { product: Product; decision: Decision };
 
-export type Stats = {
-  swipes: number;
-  likes: number;
-  streak: number;
-  bestStreak: number;
-  day: string;
-  daySwipes: number;
-};
-
 /** Слежение за ценой: что стоил товар в момент, когда его отложили. */
 export type PriceWatch = { price: number; currency: string; since: string };
 export type Account = {
@@ -81,7 +72,6 @@ export type SyncedProfile = {
   orders: OrderMark[];
   watch: Record<string, PriceWatch>;
   rejected: string[];
-  stats: Stats;
   tasted: boolean;
   updatedAt: number;
 };
@@ -93,18 +83,6 @@ export type PriceDrop = {
   now: number;
   currency: string;
 };
-
-const today = () => new Date().toISOString().slice(0, 10);
-const emptyStats = (): Stats => ({
-  swipes: 0,
-  likes: 0,
-  streak: 0,
-  bestStreak: 0,
-  day: today(),
-  daySwipes: 0,
-});
-
-export const DAILY_GOAL = 20;
 
 /**
  * Как часто спрашивать причину отказа. Вопрос должен быть редким: он полезен
@@ -126,7 +104,6 @@ type State = {
   rejected: string[];
   cart: CartItem[];
   history: HistoryEntry[];
-  stats: Stats;
   rates: Record<string, number>;
   /** Откуда и на какой день взят курс — для подписи под ценой. */
   rateInfo: { date: string | null; source: string } | null;
@@ -207,6 +184,11 @@ type State = {
   resetAll: () => void;
 };
 
+function withoutGameState(saved: unknown): Partial<State> {
+  const { stats: _removed, ...rest } = (saved ?? {}) as Record<string, unknown>;
+  return rest as Partial<State>;
+}
+
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
@@ -218,7 +200,7 @@ export const useStore = create<State>()(
       rejected: [],
       cart: [],
       history: [],
-      stats: emptyStats(),
+
       rates: { ...DEFAULT_RATES },
       rateInfo: null,
       query: "",
@@ -263,7 +245,7 @@ export const useStore = create<State>()(
                 index: 0,
                 cursor: null,
                 taste: emptyTaste(),
-                stats: emptyStats(),
+
                 tasted: false,
                 sizes: emptySizes(),
                 person: emptyPerson(),
@@ -283,7 +265,7 @@ export const useStore = create<State>()(
           orders: s.orders,
           watch: s.watch,
           rejected: s.rejected,
-          stats: s.stats,
+
           tasted: s.tasted,
           updatedAt: s.updatedAt,
         };
@@ -305,7 +287,7 @@ export const useStore = create<State>()(
           orders: profile.orders ?? [],
           watch: profile.watch ?? {},
           rejected: profile.rejected ?? [],
-          stats: profile.stats ?? emptyStats(),
+
           tasted: profile.tasted ?? false,
           updatedAt: profile.updatedAt ?? Date.now(),
           // Лента пересобирается: чужие отказы и вкусы меняют выдачу.
@@ -353,21 +335,6 @@ export const useStore = create<State>()(
         const s = get();
         const product = s.deck[s.index];
         if (!product) return undefined;
-
-        const stats = { ...s.stats };
-        if (stats.day !== today()) {
-          stats.day = today();
-          stats.daySwipes = 0;
-        }
-        stats.swipes += 1;
-        stats.daySwipes += 1;
-        if (decision === "dislike") {
-          stats.streak = 0;
-        } else {
-          stats.likes += 1;
-          stats.streak += 1;
-          stats.bestStreak = Math.max(stats.bestStreak, stats.streak);
-        }
 
         const liked =
           decision === "dislike" || s.liked.some((p) => p.id === product.id)
@@ -421,7 +388,7 @@ export const useStore = create<State>()(
           pendingReason,
           seen: [baseId(product.id), ...s.seen].slice(0, 800),
           history: [{ product, decision }, ...s.history].slice(0, 30),
-          stats,
+
           taste: learn(s.taste, product, decision),
           watch:
             decision === "dislike" ? s.watch : rememberPrice(s.watch, product),
@@ -458,13 +425,6 @@ export const useStore = create<State>()(
                   .filter((p) => !sameProduct(p.id, last.product.id)),
               ];
           const index = inDeck ? s.index - 1 : 0;
-          const stats = { ...s.stats };
-          stats.swipes = Math.max(0, stats.swipes - 1);
-          stats.daySwipes = Math.max(0, stats.daySwipes - 1);
-          if (last.decision !== "dislike") {
-            stats.likes = Math.max(0, stats.likes - 1);
-            stats.streak = Math.max(0, stats.streak - 1);
-          }
           return {
             deck,
             index,
@@ -484,7 +444,6 @@ export const useStore = create<State>()(
             // Отменённое решение снимается ровно в том весе, в каком было
             // начислено, а не противоположным свайпом.
             taste: unlearn(s.taste, last.product, last.decision),
-            stats,
           };
         }),
 
@@ -742,7 +701,7 @@ export const useStore = create<State>()(
           rejected: [],
           cart: [],
           history: [],
-          stats: emptyStats(),
+
           query: "",
           filters: {},
           cursor: null,
@@ -758,16 +717,16 @@ export const useStore = create<State>()(
     }),
     {
       name: "swipe1688",
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       migrate: (state) => ({
-        ...(state as State),
+        ...withoutGameState(state),
         person: emptyPerson(),
         sizes: emptySizes(),
       }),
       merge: (saved, current) => ({
         ...current,
-        ...(saved as State),
+        ...withoutGameState(saved),
         person: emptyPerson(),
         sizes: emptySizes(),
       }),
@@ -779,7 +738,7 @@ export const useStore = create<State>()(
         seen: s.seen.slice(0, 400),
         rejected: s.rejected.slice(0, 2000),
         cart: s.cart,
-        stats: s.stats,
+
         // Последний известный курс переживает перезагрузку: цены видны сразу,
         // не дожидаясь ответа сервера.
         rates: s.rates,
@@ -819,7 +778,7 @@ function rememberPrice(
     [product.id]: {
       price: product.price,
       currency: product.currency,
-      since: today(),
+      since: new Date().toISOString().slice(0, 10),
     },
   };
 }
