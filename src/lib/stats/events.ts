@@ -78,10 +78,13 @@ export const dayOf = (at: Date | string): string =>
 /** Поля события: только примитивы, строки короткие, вложенности нет. */
 function clean(payload: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(payload)) {
+  for (const [key, value] of Object.entries(payload).slice(0, 20)) {
+    if (key.length > 40 || ["at", "type", "device", "session"].includes(key))
+      continue;
     if (value === undefined || value === null) continue;
     if (typeof value === "string") out[key] = value.slice(0, MAX_TEXT);
-    else if (typeof value === "number" && Number.isFinite(value)) out[key] = Math.round(value * 1000) / 1000;
+    else if (typeof value === "number" && Number.isFinite(value))
+      out[key] = Math.round(value * 1000) / 1000;
     else if (typeof value === "boolean") out[key] = value;
     else if (Array.isArray(value)) {
       out[key] = value
@@ -97,29 +100,45 @@ function clean(payload: Record<string, unknown>): Record<string, unknown> {
  * Запись события. Никогда не бросает: статистика не та вещь, ради которой
  * можно уронить ленту.
  */
-export async function logEvent(type: EventType, payload: Record<string, unknown> = {}): Promise<void> {
+export async function logEvent(
+  type: EventType,
+  payload: Record<string, unknown> = {},
+): Promise<void> {
   const at = new Date();
   const { device, session, ...rest } = payload;
   const line: StatEvent = {
     at: at.toISOString(),
     type,
-    ...(ANONYMOUS.has(type) ? {} : { device: typeof device === "string" ? device.slice(0, 64) : undefined }),
-    session: typeof session === "string" ? session.slice(0, 64) : undefined,
+    ...(ANONYMOUS.has(type)
+      ? {}
+      : {
+          device: typeof device === "string" ? device.slice(0, 64) : undefined,
+        }),
+    session:
+      !ANONYMOUS.has(type) && typeof session === "string"
+        ? session.slice(0, 64)
+        : undefined,
     ...clean(rest),
   };
-  for (const key of Object.keys(line)) if (line[key] === undefined) delete line[key];
+  for (const key of Object.keys(line))
+    if (line[key] === undefined) delete line[key];
 
   try {
     const dir = statsDir();
     await mkdir(dir, { recursive: true });
-    await appendFile(join(dir, `${dayOf(at)}.jsonl`), `${JSON.stringify(line)}\n`);
+    await appendFile(
+      join(dir, `${dayOf(at)}.jsonl`),
+      `${JSON.stringify(line)}\n`,
+    );
   } catch (e) {
     console.error("Событие не записано:", e instanceof Error ? e.message : e);
   }
 }
 
 /** Пачкой — один поход на диск вместо двадцати. */
-export async function logEvents(events: { type: EventType; payload: Record<string, unknown> }[]): Promise<void> {
+export async function logEvents(
+  events: { type: EventType; payload: Record<string, unknown> }[],
+): Promise<void> {
   if (!events.length) return;
   const at = new Date();
   const lines = events.map(({ type, payload }) => {
@@ -127,11 +146,20 @@ export async function logEvents(events: { type: EventType; payload: Record<strin
     const line: StatEvent = {
       at: at.toISOString(),
       type,
-      ...(ANONYMOUS.has(type) ? {} : { device: typeof device === "string" ? device.slice(0, 64) : undefined }),
-      session: typeof session === "string" ? session.slice(0, 64) : undefined,
+      ...(ANONYMOUS.has(type)
+        ? {}
+        : {
+            device:
+              typeof device === "string" ? device.slice(0, 64) : undefined,
+          }),
+      session:
+        !ANONYMOUS.has(type) && typeof session === "string"
+          ? session.slice(0, 64)
+          : undefined,
       ...clean(rest),
     };
-    for (const key of Object.keys(line)) if (line[key] === undefined) delete line[key];
+    for (const key of Object.keys(line))
+      if (line[key] === undefined) delete line[key];
     return JSON.stringify(line);
   });
 
@@ -173,7 +201,12 @@ export async function readEvents(days: number): Promise<StatEvent[]> {
       if (!line) continue;
       try {
         const parsed = JSON.parse(line) as StatEvent;
-        if (parsed && typeof parsed.type === "string" && typeof parsed.at === "string") out.push(parsed);
+        if (
+          parsed &&
+          typeof parsed.type === "string" &&
+          typeof parsed.at === "string"
+        )
+          out.push(parsed);
       } catch {
         // Оборванная строка бывает, если сервер упал посреди записи.
       }
@@ -184,7 +217,9 @@ export async function readEvents(days: number): Promise<StatEvent[]> {
 
 /** Удаление журналов старше `keep` суток. Возвращает, что удалено. */
 export async function pruneEvents(keep: number): Promise<string[]> {
-  const edge = new Date(Date.now() - keep * 86_400_000).toISOString().slice(0, 10);
+  const edge = new Date(Date.now() - keep * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
   const gone: string[] = [];
   for (const day of await journalDays()) {
     if (day >= edge) continue;
