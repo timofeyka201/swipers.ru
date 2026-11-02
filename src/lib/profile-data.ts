@@ -11,7 +11,6 @@ export function cleanProfile(
     "orders",
     "watch",
     "rejected",
-    "stats",
     "tasted",
     "updatedAt",
   ])
