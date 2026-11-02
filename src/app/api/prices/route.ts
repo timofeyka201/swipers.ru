@@ -1,3 +1,4 @@
+import { readJson } from "@/lib/read-json";
 import { NextRequest, NextResponse } from "next/server";
 import { currentPrices } from "@/lib/providers/local";
 
@@ -11,12 +12,20 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   let ids: unknown;
   try {
-    ({ ids } = (await req.json()) as { ids?: unknown });
+    ({ ids } = (await readJson(req, 32768)) as { ids?: unknown });
   } catch {
-    return NextResponse.json({ error: "Некорректное тело запроса" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Некорректное тело запроса" },
+      { status: 400 },
+    );
   }
   if (!Array.isArray(ids)) return NextResponse.json({ prices: {} });
 
-  const wanted = ids.filter((id): id is string => typeof id === "string").slice(0, 500);
-  return NextResponse.json({ prices: currentPrices(wanted) }, { headers: { "Cache-Control": "no-store" } });
+  const wanted = ids
+    .filter((id): id is string => typeof id === "string")
+    .slice(0, 500);
+  return NextResponse.json(
+    { prices: currentPrices(wanted) },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
