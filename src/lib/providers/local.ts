@@ -200,7 +200,7 @@ function score(p: Product, hint: TasteHint | undefined, rnd: () => number): numb
 
 /** Название источника по снапшоту: витрина на AliExpress не должна называться
  *  «своей базой» — человек видит этот ярлык в настройках. */
-const SNAPSHOT_LABEL: Record<string, string> = { ae: "AliExpress", etsy: "Etsy", global: "Открытый каталог" };
+const SNAPSHOT_LABEL: Record<string, string> = { ae: "AliExpress", global: "Открытый каталог" };
 
 /**
  * Страница из окна кандидатов: большая часть — под вкус, остаток — разведка.
