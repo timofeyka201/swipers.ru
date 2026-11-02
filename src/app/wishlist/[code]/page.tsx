@@ -48,6 +48,9 @@ export default function FriendWishlist() {
   const [auth, setAuth] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
   const load = useCallback(async () => {
+    setView(null);
+    setOwn(false);
+    setError("");
     if (!code) {
       setError("Ссылка на вишлист некорректна");
       setLoading(false);
