@@ -9,7 +9,7 @@
 
 // v2 — перестановка интерфейса: старая оболочка в кэше показывала бы
 // прежнюю ленту с нижним рядом кнопок до ручного обновления страницы.
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL = `swiper-shell-${VERSION}`;
 const DATA = `swiper-data-${VERSION}`;
 const IMAGES = `swiper-images-${VERSION}`;
