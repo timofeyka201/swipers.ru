@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import AccountCard from "@/components/AccountCard";
 import Img from "@/components/Img";
-import RankCard from "@/components/RankCard";
 import SettingsSheet from "@/components/SettingsSheet";
 import {
   IconBox,
@@ -27,7 +26,7 @@ import { useHydrated, useStore } from "@/lib/store";
  *
  * До этого личное было рассыпано: счётчики жили в шапке ленты, размеры и вход
  * — в шторке настроек, а имени с телефоном не было вовсе. Теперь раздел один
- * и порядок в нём от частого к редкому: кто вы, какой у вас ранг, ваши данные,
+ * и порядок в нём от частого к редкому: кто вы, ваши данные,
  * размеры, заказы. Настройки сервиса остались шторкой — за значком в углу:
  * тему и курс валют открывают раз в жизни.
  */
@@ -80,11 +79,6 @@ export default function ProfilePage() {
           <AccountCard />
           <Nickname />
           <FindFriend />
-        </section>
-
-        <section>
-          <Caption>Ранг</Caption>
-          <RankCard />
         </section>
 
         <section>
