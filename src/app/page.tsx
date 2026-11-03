@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AnimatePresence } from "framer-motion";
 import { useHydrated, useStore, type Decision } from "@/lib/store";
 import { loadNextPage } from "@/lib/feed";
 import { track } from "@/lib/stat";
@@ -174,69 +173,64 @@ export default function Home() {
         canUndo={s.history.length > 0}
       />
       <div className="ui-feed-stage">
-        <AnimatePresence>
-          {refine ? (
-            <RefineCard key="refine" onDone={() => s.answerReason(null)} />
-          ) : active ? (
-            <SwipeCard
-              key={active.id}
-              product={active}
-              active
-              depth={0}
-              exitWay="like"
-              onDecide={decide}
-              onOpen={() => setProduct(active)}
-              onUndo={s.undo}
-              canUndo={!!s.history.length}
-            />
-          ) : error ? (
-            <Empty
-              title="Нет связи"
-              detail="Новые карточки подгрузятся, когда появится интернет. Сохранённое открывается и без сети."
+        {refine ? (
+          <RefineCard key="refine" onDone={() => s.answerReason(null)} />
+        ) : active ? (
+          <SwipeCard
+            key={active.id}
+            product={active}
+            active
+            depth={0}
+            onDecide={decide}
+            onOpen={() => setProduct(active)}
+          />
+        ) : error ? (
+          <Empty
+            title="Нет связи"
+            detail="Новые карточки подгрузятся, когда появится интернет. Сохранённое открывается и без сети."
+          >
+            <button
+              className="ui-btn ui-dark"
+              onClick={() => {
+                setError("");
+                setRetry((v) => v + 1);
+              }}
             >
-              <button
-                className="ui-btn ui-dark"
-                onClick={() => {
-                  setError("");
-                  setRetry((v) => v + 1);
-                }}
-              >
-                Попробовать снова
-              </button>
-              <Link className="ui-btn ui-soft" href="/likes">
-                Открыть сохранённое
-              </Link>
-            </Empty>
-          ) : ended ? (
-            <Empty
-              icon={<IconCheck />}
-              title={s.query ? "Это всё по запросу" : "Вы посмотрели подборку"}
-              detail={
-                total
-                  ? "Вы посмотрели доступные товары. Понравившееся — в «Сохранённом»."
-                  : "Попробуйте другой запрос или измените фильтры."
-              }
+              Попробовать снова
+            </button>
+            <Link className="ui-btn ui-soft" href="/likes">
+              Открыть сохранённое
+            </Link>
+          </Empty>
+        ) : ended ? (
+          <Empty
+            icon={<IconCheck />}
+            title={s.query ? "Это всё по запросу" : "Вы посмотрели подборку"}
+            detail={
+              total
+                ? "Вы посмотрели доступные товары. Понравившееся — в «Сохранённом»."
+                : "Попробуйте другой запрос или измените фильтры."
+            }
+          >
+            <Link className="ui-btn ui-dark" href="/likes">
+              Открыть сохранённое
+            </Link>
+            <button
+              className="ui-btn ui-soft"
+              onClick={() => setFiltersOpen(true)}
             >
-              <Link className="ui-btn ui-dark" href="/likes">
-                Открыть сохранённое
-              </Link>
-              <button
-                className="ui-btn ui-soft"
-                onClick={() => setFiltersOpen(true)}
-              >
-                Изменить запрос
-              </button>
-              <button className="ui-text-button" onClick={reset}>
-                Вернуться к ленте
-              </button>
-            </Empty>
-          ) : (
-            <div
-              className="ui-loader"
-              aria-label={loading ? "Подбираем товары" : "Загрузка"}
-            />
-          )}
-        </AnimatePresence>
+              Изменить запрос
+            </button>
+            <button className="ui-text-button" onClick={reset}>
+              Вернуться к ленте
+            </button>
+          </Empty>
+        ) : (
+          <div
+            className="ui-loader"
+            aria-label={loading ? "Подбираем товары" : "Загрузка"}
+          />
+        )}
       </div>
       <ProductSheet product={product} onClose={() => setProduct(null)} />
       <FilterSheet
@@ -272,7 +266,10 @@ export default function Home() {
               <br />
               или используйте кнопки
             </h2>
-            <p>Тап по фото откроет подробности товара</p>
+            <p>
+              Нажимайте слева или справа на фото, чтобы листать снимки. Название
+              открывает подробности.
+            </p>
             <button className="ui-btn ui-white" onClick={() => setCoach(false)}>
               Понятно
             </button>
