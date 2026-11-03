@@ -119,7 +119,10 @@ export function loadNextPage(): Promise<FeedResult> {
         // Страница целиком из уже виденного — колода не выросла, идём дальше.
         if (useStore.getState().deck.length > before) return last;
       }
-      return last;
+      // Four complete pages did not add a single product. Treat this as the
+      // end of the available collection, rather than restarting prefetch on
+      // every React render while the last few cards are still visible.
+      return { ...last, noMore: true };
     } catch {
       return { ok: false, error: "Не удалось связаться с сервером" };
     } finally {
