@@ -500,6 +500,12 @@ export const localProvider: Provider = {
     }
 
     // Сюда попадаем, только если исключено вообще всё, что есть в каталоге.
-    return { products: [], cursor: encodeCursor(0, round), looped: false };
+    return {
+      products: [],
+      cursor: encodeCursor(0, round),
+      looped: false,
+      noMore: true,
+      total: all.filter(allowed).length,
+    };
   },
 };
