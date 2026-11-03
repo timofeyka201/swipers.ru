@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import Img from "./Img";
+import PhotoGallery from "./PhotoGallery";
 import { BuyButton } from "./Ui";
 import ProductSheet from "./ProductSheet";
 import { useStore } from "@/lib/store";
@@ -20,17 +20,18 @@ export default function SharedProduct({ product: p }: { product: Product }) {
         <strong>Вам прислали товар из Swiper</strong>
       </div>
       <div className="ui-page-body">
-        <button
+        <PhotoGallery
           className="ui-shared-photo"
-          aria-label="Открыть подробности товара"
-          onClick={() => setDetails(true)}
-        >
-          <Img className="ui-image" src={p.images[0]} alt={p.title} eager />
-        </button>
+          images={p.images}
+          title={p.title}
+          eager
+        />
         <strong className="ui-price">
           {formatRub(p.price, p.currency, rates)}
         </strong>
-        <h1 className="ui-shared-title">{p.title}</h1>
+        <h1 className="ui-shared-title">
+          <button onClick={() => setDetails(true)}>{p.title}</button>
+        </h1>
         {p.rating !== undefined && (
           <p className="ui-rating">★ {p.rating.toFixed(1)}</p>
         )}
