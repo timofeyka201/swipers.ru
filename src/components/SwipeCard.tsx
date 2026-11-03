@@ -137,7 +137,8 @@ export default function SwipeCard({
               )}
           </strong>
           <button
-            onPointerDown={(e) => e.stopPropagation()}
+            draggable={false}
+            style={{ userSelect: "none" }}
             onClick={(e) => {
               if (e.detail === 0 || !dragged.current) onOpen();
             }}
