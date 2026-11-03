@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import Img from "@/components/Img";
+import PhotoGallery from "@/components/PhotoGallery";
+import { galleryImages } from "@/lib/gestures";
 import AuthSheet from "@/components/AuthSheet";
 import ProductSheet from "@/components/ProductSheet";
 import { BuyButton, Empty } from "@/components/Ui";
@@ -25,7 +26,7 @@ const productOf = (item: FriendItem): Product => ({
   id: item.product?.id ?? item.id,
   url: item.url ?? item.product?.url ?? "",
   title: item.title,
-  images: item.image ? [item.image] : (item.product?.images ?? []),
+  images: galleryImages(item.product?.images, item.image),
   price: item.price,
   currency: item.currency,
   tiers: item.product?.tiers ?? [],
@@ -141,19 +142,20 @@ export default function FriendWishlist() {
               {view.items.map((item) => (
                 <article key={item.id} className="ui-friend-item">
                   <div className="ui-product-row">
-                    <button
+                    <PhotoGallery
+                      key={item.id}
                       className="ui-row-image"
-                      aria-label={"Открыть " + item.title}
-                      onClick={() => setProduct(productOf(item))}
-                    >
-                      <Img
-                        className="ui-image"
-                        src={item.image}
-                        alt={item.title}
-                      />
-                    </button>
+                      images={galleryImages(item.product?.images, item.image)}
+                      title={item.title}
+                      compact
+                    />
                     <div className="ui-row-copy">
-                      <strong>{item.title}</strong>
+                      <button
+                        className="ui-row-title"
+                        onClick={() => setProduct(productOf(item))}
+                      >
+                        {item.title}
+                      </button>
                       <span>
                         {item.price !== undefined
                           ? formatRub(item.price, item.currency, rates)
