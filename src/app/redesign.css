@@ -1971,3 +1971,127 @@ body::before {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* One gallery behavior everywhere; larger controls remain usable on touchscreens. */
+.ui-gallery {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  isolation: isolate;
+  touch-action: pan-y;
+}
+.ui-gallery-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  display: block;
+  cursor: pointer;
+}
+.ui-gallery-photo > .ui-image {
+  width: 100%;
+  height: 100%;
+}
+.ui-gallery-photo .ui-image img {
+  object-fit: cover;
+}
+.ui-gallery-arrow {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 44px;
+  border: 0;
+  border-radius: 99px;
+  background: #ffffffd9;
+  color: #0d0e11;
+  font-size: 32px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 2px 6px #0001;
+}
+.ui-gallery-prev {
+  left: 10px;
+}
+.ui-gallery-next {
+  right: 10px;
+}
+.ui-gallery-count {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  right: 12px;
+  padding: 5px 9px;
+  border-radius: 99px;
+  background: #0d0e11b3;
+  color: #fff;
+  font-size: 11px;
+  pointer-events: none;
+}
+.ui-product-gallery {
+  height: 100%;
+  width: 100%;
+}
+.ui-product-gallery .ui-gallery-photo .ui-image img {
+  object-fit: contain;
+}
+.ui-swipe-wrap {
+  touch-action: none;
+}
+.ui-swipe-photo.ui-gallery {
+  touch-action: none;
+}
+.ui-photo-reason,
+.ui-discount {
+  pointer-events: none;
+  z-index: 2;
+}
+.ui-photo-reason {
+  max-width: calc(100% - 100px);
+}
+.ui-product-back,
+.ui-product-share {
+  z-index: 3;
+}
+.ui-product-footer .ui-like {
+  background: var(--color-surface-2);
+}
+.ui-product-footer .ui-like:not(.is-liked) svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+.ui-product-footer .is-liked {
+  background: #c6f135;
+  color: #0d0e11;
+}
+.ui-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-align: left;
+}
+.ui-wish-media {
+  height: 170px;
+  width: 100%;
+  border-radius: 14px;
+  background: var(--color-surface-2);
+}
+.ui-shared-title button {
+  text-align: left;
+  font: inherit;
+}
+.ui-refine {
+  max-height: 100%;
+  overflow: auto;
+}
