@@ -80,30 +80,34 @@ export default function SwipeCard({
       });
   };
   return (
-    <motion.article
+    <article
       className="ui-swipe-wrap"
       style={{
         zIndex: 10 - depth,
-        rotate: active ? rotation : 0,
-        x: active ? x : 0,
-        y: active ? y : 0,
         pointerEvents: active && !exiting ? "auto" : "none",
       }}
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={controls}
       data-exiting={exiting}
       aria-hidden={exiting}
-      drag={active && !exiting}
-      dragMomentum={false}
-      onDragStart={() => {
-        dragged.current = true;
-      }}
-      onPointerDownCapture={() => {
-        dragged.current = false;
-      }}
-      onDragEnd={end}
     >
-      <div className="ui-swipe-card">
+      <motion.div
+        className="ui-swipe-card"
+        style={{
+          rotate: active ? rotation : 0,
+          x: active ? x : 0,
+          y: active ? y : 0,
+        }}
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={controls}
+        drag={active && !exiting}
+        dragMomentum={false}
+        onDragStart={() => {
+          dragged.current = true;
+        }}
+        onPointerDownCapture={() => {
+          dragged.current = false;
+        }}
+        onDragEnd={end}
+      >
         <PhotoGallery
           key={p.id}
           className="ui-swipe-photo"
@@ -152,7 +156,7 @@ export default function SwipeCard({
             <p className="ui-seller">Магазин {p.seller.name}</p>
           )}
         </div>
-      </div>
+      </motion.div>
       {active && (
         <div className="ui-swipe-actions">
           <button
@@ -181,6 +185,6 @@ export default function SwipeCard({
           </button>
         </div>
       )}
-    </motion.article>
+    </article>
   );
 }
