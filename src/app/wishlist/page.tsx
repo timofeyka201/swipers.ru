@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { SavedHeader, Empty } from "@/components/Ui";
 import { IconPlus, IconShare, IconGear, IconX } from "@/components/Icons";
+import PhotoGallery from "@/components/PhotoGallery";
+import { galleryImages } from "@/lib/gestures";
 import Img from "@/components/Img";
 import ProductSheet from "@/components/ProductSheet";
 import AuthSheet from "@/components/AuthSheet";
@@ -263,6 +265,18 @@ export default function Wishlist() {
               <div className="ui-wish-grid">
                 {items.map((item) => (
                   <article key={item.id} className="ui-wish-item">
+                    <PhotoGallery
+                      key={item.id}
+                      className="ui-wish-media"
+                      compact
+                      images={galleryImages(item.product?.images, item.image)}
+                      title={item.title}
+                    />
+                    <strong>
+                      {item.price !== undefined
+                        ? formatRub(item.price, item.currency, s.rates)
+                        : "Цена не указана"}
+                    </strong>
                     <button
                       className="ui-wish-open"
                       onClick={() =>
@@ -273,25 +287,16 @@ export default function Wishlist() {
                               price: item.price,
                               currency: item.currency,
                               url: item.url ?? item.product.url,
-                              images: item.image
-                                ? [item.image]
-                                : item.product.images,
+                              images: galleryImages(
+                                item.product.images,
+                                item.image,
+                              ),
                               description:
                                 item.note ?? item.product.description,
                             })
                           : (setEditing(item), setForm(true))
                       }
                     >
-                      <Img
-                        className="ui-image"
-                        src={item.image}
-                        alt={item.title}
-                      />
-                      <strong>
-                        {item.price !== undefined
-                          ? formatRub(item.price, item.currency, s.rates)
-                          : "Цена не указана"}
-                      </strong>
                       <span>{item.title}</span>
                     </button>
                     <div className="ui-wish-edit">
