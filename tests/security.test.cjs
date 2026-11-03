@@ -462,3 +462,170 @@ test("a late feed response cannot overwrite a newer search", async () => {
     global.fetch = originalFetch;
   }
 });
+
+test("swipes follow the dominant axis and animate in the chosen direction", () => {
+  const { swipeDecision, swipeExit } = require("../src/lib/gestures.ts");
+  for (const [x, y, expected] of [
+    [-120, 8, "dislike"],
+    [120, -12, "like"],
+    [120, -260, "super"],
+    [5, 130, null],
+    [60, -70, null],
+    [-84, 0, null],
+    [-85, 0, "dislike"],
+  ])
+    assert.equal(swipeDecision(x, y), expected);
+  assert.ok(swipeExit("dislike").x < 0);
+  assert.ok(swipeExit("like").x > 0);
+  assert.equal(swipeExit("super").x, 0);
+  assert.ok(swipeExit("super").y < 0);
+});
+test("galleries wrap in both directions, support all photos, and retain original images with an edited cover", () => {
+  const { photoIndex, galleryImages } = require("../src/lib/gestures.ts");
+  assert.equal(photoIndex(0, -1, 12), 11);
+  assert.equal(photoIndex(11, 1, 12), 0);
+  assert.equal(photoIndex(7, 1, 12), 8);
+  assert.equal(photoIndex(8, 1, 0), 0);
+  assert.equal(photoIndex(0, -1, 1), 0);
+  assert.deepEqual(galleryImages(["a", "b", "c"], "b"), ["b", "a", "c"]);
+  assert.deepEqual(galleryImages(["a", "b"], "new"), ["new", "a", "b"]);
+  assert.deepEqual(galleryImages([]), []);
+});
+test("undo preserves products saved before a swipe and marks the change for sync", () => {
+  const { useStore } = require("../src/lib/store.ts");
+  const { emptyTaste } = require("../src/lib/taste.ts");
+  const p = {
+    id: "undo-existing",
+    title: "Existing",
+    images: [],
+    currency: "RUB",
+    price: 10,
+  };
+  useStore.setState({
+    deck: [p],
+    index: 0,
+    history: [],
+    liked: [p],
+    cart: [{ product: p, qty: 1 }],
+    seen: [],
+    rejected: [],
+    taste: emptyTaste(),
+    watch: {},
+    pendingReason: null,
+    dislikesSinceAsk: 0,
+  });
+  useStore.getState().decide("super");
+  useStore.setState({ updatedAt: 1 });
+  useStore.getState().undo();
+  assert.equal(useStore.getState().liked.length, 1);
+  assert.equal(useStore.getState().cart.length, 1);
+  assert.equal(useStore.getState().index, 0);
+  assert.ok(useStore.getState().updatedAt > 1);
+});
+test("undo reverses a new save and cancels the question triggered by the last dislike", () => {
+  const { useStore, ASK_REASON_EVERY } = require("../src/lib/store.ts");
+  const { emptyTaste } = require("../src/lib/taste.ts");
+  const p = { id: "undo-new", title: "New", images: [], currency: "RUB" };
+  useStore.setState({
+    deck: [p],
+    index: 0,
+    history: [],
+    liked: [],
+    cart: [],
+    seen: [],
+    rejected: [],
+    taste: emptyTaste(),
+    watch: {},
+    pendingReason: null,
+    dislikesSinceAsk: ASK_REASON_EVERY - 1,
+  });
+  useStore.getState().decide("like");
+  useStore.getState().undo();
+  assert.equal(useStore.getState().liked.length, 0);
+  useStore.getState().decide("dislike");
+  assert.ok(useStore.getState().pendingReason);
+  useStore.getState().undo();
+  assert.equal(useStore.getState().pendingReason, null);
+  assert.equal(useStore.getState().dislikesSinceAsk, ASK_REASON_EVERY - 1);
+});
+
+test("prefetch stops after four pages of duplicates instead of retrying forever", async () => {
+  const { useStore } = require("../src/lib/store.ts");
+  const { loadNextPage } = require("../src/lib/feed.ts");
+  const p = {
+    id: "already-loaded",
+    title: "Loaded",
+    images: [],
+    currency: "RUB",
+  };
+  useStore.setState({
+    query: "",
+    filters: {},
+    seed: 42,
+    deck: [p],
+    index: 0,
+    cursor: null,
+    liked: [],
+    seen: [],
+    rejected: [],
+  });
+  const originalFetch = global.fetch;
+  let calls = 0;
+  global.fetch = async () => {
+    calls++;
+    return new Response(
+      JSON.stringify({
+        products: [p],
+        cursor: String(calls),
+        provider: "local",
+        providerLabel: "Local",
+      }),
+    );
+  };
+  try {
+    const result = await loadNextPage();
+    assert.equal(calls, 4);
+    assert.equal(result.noMore, true);
+    assert.equal(useStore.getState().deck.length, 1);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("an exhausted catalogue is an empty result, not a connectivity failure", async () => {
+  const previous = process.env.CATALOG_FILE;
+  const file = path.join(temp, "empty-feed-catalog.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify({
+      version: 1,
+      kind: "ae",
+      products: [
+        {
+          id: "excluded",
+          title: "Excluded",
+          images: [],
+          currency: "RUB",
+          category: "clothes",
+          source: "ae",
+        },
+      ],
+    }),
+  );
+  process.env.CATALOG_FILE = file;
+  try {
+    const { localProvider } = require("../src/lib/providers/local.ts");
+    const result = await localProvider.page({
+      query: "",
+      filters: {},
+      seed: 1,
+      cursor: null,
+      hint: { exclude: ["excluded"] },
+    });
+    assert.deepEqual(result.products, []);
+    assert.equal(result.noMore, true);
+  } finally {
+    if (previous === undefined) delete process.env.CATALOG_FILE;
+    else process.env.CATALOG_FILE = previous;
+  }
+});

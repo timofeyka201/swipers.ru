@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Sheet from "./Sheet";
 import Img from "./Img";
+import PhotoGallery from "./PhotoGallery";
 import { IconArrowLeft, IconHeart, IconShare } from "./Icons";
 import { BuyButton } from "./Ui";
 import { useStore } from "@/lib/store";
@@ -9,7 +10,7 @@ import { formatRub, compact } from "@/lib/money";
 import type { Product } from "@/lib/types";
 import { cardUrlAbsolute } from "@/lib/shop";
 import { toast } from "./Toast";
-export default function ProductSheet({
+function ProductDetails({
   product,
   onClose,
 }: {
@@ -21,7 +22,6 @@ export default function ProductSheet({
   const toggleWish = useStore((s) => s.toggleWish);
   const wished = useStore((s) => s.wishlist);
   const source = useStore((s) => s.deck);
-  const [photo, setPhoto] = useState(0);
   const [detail, setDetail] = useState(false);
   if (!product) return null;
   const p = product;
@@ -29,7 +29,9 @@ export default function ProductSheet({
   const related = source
     .filter(
       (x) =>
-        x.id !== p.id && (x.category === p.category || x.group === p.group),
+        x.id !== p.id &&
+        ((!!p.category && x.category === p.category) ||
+          (!!p.group && x.group === p.group)),
     )
     .slice(0, 6);
   const share = async () => {
@@ -75,10 +77,10 @@ export default function ProductSheet({
       }
     >
       <div className="ui-product-hero">
-        <Img
-          className="ui-image"
-          src={p.images[photo % Math.max(1, p.images.length)] ?? p.images[0]}
-          alt={p.title}
+        <PhotoGallery
+          className="ui-product-gallery"
+          images={p.images}
+          title={p.title}
           eager
         />
         <button
@@ -95,16 +97,6 @@ export default function ProductSheet({
         >
           <IconShare />
         </button>
-        <div className="ui-photo-dots">
-          {p.images.slice(0, 8).map((_, i) => (
-            <button
-              key={i}
-              aria-label={"Фото " + (i + 1)}
-              aria-pressed={photo === i}
-              onClick={() => setPhoto(i)}
-            />
-          ))}
-        </div>
       </div>
       <div className="ui-product-info">
         <strong className="ui-price ui-product-price">
@@ -127,7 +119,7 @@ export default function ProductSheet({
             <span>
               {p.reviewsCount
                 ? compact(p.reviewsCount) + " отзывов"
-                : "Рейтинг продавца не указан"}
+                : "Количество отзывов не указано"}
             </span>
           </div>
           <div>
@@ -199,4 +191,13 @@ export default function ProductSheet({
       </div>
     </Sheet>
   );
+}
+
+export default function ProductSheet(props: {
+  product: Product | null;
+  onClose: () => void;
+}) {
+  return props.product ? (
+    <ProductDetails key={props.product.id} {...props} />
+  ) : null;
 }

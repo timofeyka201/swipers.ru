@@ -1,5 +1,6 @@
 "use client";
 
+import { galleryImages } from "@/lib/gestures";
 import { toast } from "@/components/Toast";
 import { useStore } from "@/lib/store";
 import type { Product } from "@/lib/types";
@@ -40,7 +41,7 @@ const productsOf = (view: OwnerView): Product[] =>
       price: i.price,
       currency: i.currency,
       url: i.url ?? i.product!.url,
-      images: i.image ? [i.image] : i.product!.images,
+      images: galleryImages(i.product!.images, i.image),
       description: i.note ?? i.product!.description,
     }));
 

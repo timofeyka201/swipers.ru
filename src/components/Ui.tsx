@@ -7,7 +7,7 @@ import { safeUrl } from "@/lib/wish/types";
 import { useStore } from "@/lib/store";
 import { shopUrl, type ShopFrom } from "@/lib/shop";
 import type { Product } from "@/lib/types";
-import Img from "./Img";
+import PhotoGallery from "./PhotoGallery";
 import { formatRub } from "@/lib/money";
 export function Header({
   title,
@@ -138,22 +138,20 @@ export function ProductRow({
   const rates = useStore((s) => s.rates);
   return (
     <article className="ui-product-row">
-      <button
+      <PhotoGallery
+        key={product.id}
         className="ui-row-image"
-        onClick={onOpen}
-        aria-label={"Открыть: " + product.title}
-      >
-        <Img
-          className="ui-image"
-          src={product.images?.[0]}
-          alt={product.title}
-        />
-      </button>
-      <button className="ui-row-copy" onClick={onOpen}>
-        <span>{product.title}</span>
+        images={product.images}
+        title={product.title}
+        compact
+      />
+      <div className="ui-row-copy">
+        <button className="ui-row-title" onClick={onOpen}>
+          {product.title}
+        </button>
         <strong>{formatRub(product.price, product.currency, rates)}</strong>
         {detail && <small>{detail}</small>}
-      </button>
+      </div>
       {children && <div className="ui-row-actions">{children}</div>}
     </article>
   );
