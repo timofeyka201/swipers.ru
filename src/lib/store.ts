@@ -21,7 +21,14 @@ import type { Product } from "./types";
 
 export type CartItem = { product: Product; qty: number; sku?: string };
 export type Decision = "like" | "dislike" | "super";
-type HistoryEntry = { product: Product; decision: Decision };
+type HistoryEntry = {
+  addedLike?: boolean;
+  addedCart?: boolean;
+  dislikesBefore?: number;
+  reasonBefore?: Product | null;
+  product: Product;
+  decision: Decision;
+};
 
 /** Слежение за ценой: что стоил товар в момент, когда его отложили. */
 export type PriceWatch = { price: number; currency: string; since: string };
@@ -413,7 +420,17 @@ export const useStore = create<State>()(
           dislikesSinceAsk,
           pendingReason,
           seen: [baseId(product.id), ...s.seen].slice(0, 800),
-          history: [{ product, decision }, ...s.history].slice(0, 30),
+          history: [
+            {
+              product,
+              decision,
+              addedLike: liked !== s.liked,
+              addedCart: cart !== s.cart,
+              dislikesBefore: s.dislikesSinceAsk,
+              reasonBefore: s.pendingReason,
+            },
+            ...s.history,
+          ].slice(0, 30),
 
           taste: learn(s.taste, product, decision),
           watch:
@@ -455,12 +472,18 @@ export const useStore = create<State>()(
             deck,
             index,
             history: rest,
+            updatedAt: Date.now(),
+            dislikesSinceAsk: last.dislikesBefore ?? s.dislikesSinceAsk,
+            pendingReason:
+              last.reasonBefore === undefined
+                ? s.pendingReason
+                : last.reasonBefore,
             liked:
-              last.decision === "dislike"
+              last.decision === "dislike" || last.addedLike === false
                 ? s.liked
                 : s.liked.filter((p) => p.id !== last.product.id),
             cart:
-              last.decision === "super"
+              last.decision === "super" && last.addedCart !== false
                 ? s.cart.filter((c) => c.product.id !== last.product.id)
                 : s.cart,
             seen: s.seen.filter((id) => !sameProduct(id, last.product.id)),
