@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Sheet from "./Sheet";
 import Img from "./Img";
+import ReviewCount from "./ReviewCount";
 import PhotoGallery from "./PhotoGallery";
 import { IconArrowLeft, IconHeart, IconShare } from "./Icons";
 import { BuyButton } from "./Ui";
@@ -117,9 +118,7 @@ function ProductDetails({
                 : "Нет оценки"}
             </b>
             <span>
-              {p.reviewsCount
-                ? compact(p.reviewsCount) + " отзывов"
-                : "Количество отзывов не указано"}
+              <ReviewCount product={p} />
             </span>
           </div>
           <div>
