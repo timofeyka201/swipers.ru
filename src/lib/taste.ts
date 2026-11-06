@@ -1,3 +1,5 @@
+import { categoryLabel } from "./categories";
+import { baseId } from "./ids";
 import type { Product } from "./types";
 
 /**
@@ -9,6 +11,8 @@ import type { Product } from "./types";
 export type Taste = {
   /** категории, выбранные в тесте */
   picked: string[];
+  categoryBudgets?: Record<string, number>;
+  signals?: Record<string, number>;
   /** верхняя граница цены из теста, в рублях */
   budget?: number;
   /** накопленные предпочтения: ключ → вес (может быть отрицательным) */
@@ -124,15 +128,14 @@ const bumpTags = (
  *  мог быть заведён до их появления. */
 const draft = (taste: Taste): Taste & { tags: Record<string, number> } => ({
   ...taste,
-  categories: { ...taste.categories },
+  categories: normalizeCategories(taste.categories),
   brands: { ...taste.brands },
   tags: { ...taste.tags },
   reasons: { ...taste.reasons },
 });
 
 /**
- * Свайп влево — явный отказ, и весит он больше лайка: человеку проще
- * пролистнуть что угодно, чем осознанно отвергнуть.
+ * Обычный отказ слабо влияет на категорию: причина может быть в одном товаре.
  */
 export function learn(
   taste: Taste,
@@ -140,10 +143,12 @@ export function learn(
   decision: "like" | "dislike" | "super",
 ): Taste {
   const next = draft(taste);
-  const weight = decision === "super" ? 2 : decision === "like" ? 1 : -1.4;
-  bump(next.categories, product.category, weight);
-  bump(next.brands, product.brand, weight * 0.7);
-  bumpTags(next.tags, product.tags, weight);
+  const weight = decision === "super" ? 2 : decision === "like" ? 1 : -0.15;
+  bump(next.categories, categoryLabel(product.category), weight);
+  if (decision !== "dislike") {
+    bump(next.brands, product.brand, weight * 0.7);
+    bumpTags(next.tags, product.tags, weight);
+  }
   return next;
 }
 
@@ -162,10 +167,12 @@ export function unlearn(
   decision: "like" | "dislike" | "super",
 ): Taste {
   const next = draft(taste);
-  const weight = -(decision === "super" ? 2 : decision === "like" ? 1 : -1.4);
-  bump(next.categories, product.category, weight);
-  bump(next.brands, product.brand, weight * 0.7);
-  bumpTags(next.tags, product.tags, weight);
+  const weight = -(decision === "super" ? 2 : decision === "like" ? 1 : -0.15);
+  bump(next.categories, categoryLabel(product.category), weight);
+  if (decision !== "dislike") {
+    bump(next.brands, product.brand, weight * 0.7);
+    bumpTags(next.tags, product.tags, weight);
+  }
   return next;
 }
 
@@ -178,7 +185,7 @@ export function unlearn(
  */
 export function learnVisit(taste: Taste, product: Product): Taste {
   const next = draft(taste);
-  bump(next.categories, product.category, 3);
+  bump(next.categories, categoryLabel(product.category), 3);
   bump(next.brands, product.brand, 2.1);
   bumpTags(next.tags, product.tags, 3);
   return next;
@@ -194,7 +201,8 @@ export function learnReason(
   const next = draft(taste);
   next.reasons[reason] = (next.reasons[reason] ?? 0) + 1;
 
-  if (reason === "category") bump(next.categories, product.category, -2.5);
+  if (reason === "category")
+    bump(next.categories, categoryLabel(product.category), -2.5);
   if (reason === "look") {
     bump(next.brands, product.brand, -1.5);
     /*
@@ -212,10 +220,13 @@ export function learnReason(
   if (reason === "quality") bump(next.brands, product.brand, -2);
   // «Дорого» — не про товар, а про планку: опускаем бюджет к этой цене.
   if (reason === "price" && priceRub !== undefined) {
-    next.budget =
-      next.budget === undefined
-        ? priceRub * 0.8
-        : Math.min(next.budget, priceRub * 0.85);
+    const key = categoryLabel(product.category);
+    const old = next.categoryBudgets?.[key];
+    next.categoryBudgets = {
+      ...next.categoryBudgets,
+      [key]:
+        old === undefined ? priceRub * 0.8 : Math.min(old, priceRub * 0.85),
+    };
   }
   return next;
 }
@@ -223,6 +234,7 @@ export function learnReason(
 /** Компактная выжимка для запроса ленты: полный профиль серверу не нужен. */
 export type TasteHint = {
   picked?: string[];
+  categoryBudgets?: Record<string, number>;
   budget?: number;
   /** курсы нужны там, где считается попадание в бюджет */
   rates?: Record<string, number>;
@@ -236,6 +248,11 @@ export function toHint(
   taste: Taste,
   excludeIds: string[],
   rates?: Record<string, number>,
+  recent: {
+    product: Product;
+    decision: "like" | "dislike" | "super";
+    at?: number;
+  }[] = [],
 ): TasteHint {
   const trim = (map: Record<string, number>) =>
     Object.fromEntries(
@@ -244,15 +261,94 @@ export function toHint(
         .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
         .slice(0, 40),
     );
+  const categories = normalizeCategories(taste.categories);
+  const session: Record<string, number> = {};
+  for (const entry of recent.slice(0, 12)) {
+    const age = Date.now() - (entry.at ?? 0);
+    if (age < 0 || age > 1800000) continue;
+    const key = categoryLabel(entry.product.category);
+    session[key] =
+      (session[key] ?? 0) +
+      (entry.decision === "dislike" ? -0.1 : 1) * Math.exp(-age / 900000);
+  }
+  for (const [key, value] of Object.entries(session))
+    categories[key] =
+      (categories[key] ?? 0) + Math.max(-1, Math.min(2.5, value));
   return {
     picked: taste.picked.length ? taste.picked : undefined,
     budget: taste.budget || undefined,
     rates,
-    categories: trim(taste.categories),
+    categories: trim(categories),
+    categoryBudgets: taste.categoryBudgets,
     brands: trim(taste.brands),
     tags: trim(taste.tags ?? {}),
     // Список показанного не должен раздуваться бесконечно: это тело запроса,
     // которое уходит с телефона на каждой подгрузке.
     exclude: excludeIds.slice(0, 800),
   };
+}
+
+/** Merge legacy raw keys with their display labels before learning or serving. */
+export function normalizeCategories(
+  weights: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(weights)) {
+    if (!Number.isFinite(value)) continue;
+    const label = categoryLabel(key);
+    out[label] = Math.max(-8, Math.min(8, (out[label] ?? 0) + value));
+  }
+  return out;
+}
+
+/** Once per item and action per day; revisiting a shop cannot flood the profile. */
+export function learnAction(
+  taste: Taste,
+  product: Product,
+  action: "like" | "wish" | "shop",
+  now = Date.now(),
+): Taste {
+  const key = action + ":" + baseId(product.id);
+  if (taste.signals?.[key] && now - taste.signals[key] < 86400000) return taste;
+  const next =
+    action === "shop"
+      ? learnVisit(taste, product)
+      : learn(taste, product, action === "wish" ? "super" : "like");
+  next.signals = Object.fromEntries(
+    [
+      [key, now],
+      ...Object.entries(taste.signals ?? {}).filter(
+        ([k, at]) => k !== key && now - at < 86400000,
+      ),
+    ].slice(0, 150),
+  );
+  return next;
+}
+
+/** Remove the actual capped delta, preserving later shop/wishlist signals. */
+export function undoLearning(
+  current: Taste,
+  before: Taste,
+  after: Taste,
+): Taste {
+  const next = draft(current);
+  for (const field of ["categories", "brands", "tags"] as const) {
+    const b =
+      field === "categories"
+        ? normalizeCategories(before.categories)
+        : (before[field] ?? {});
+    const a = after[field] ?? {};
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      next[field][key] =
+        (next[field][key] ?? 0) - ((a[key] ?? 0) - (b[key] ?? 0));
+    }
+  }
+  next.signals = { ...current.signals };
+  for (const [key, at] of Object.entries(after.signals ?? {})) {
+    if (before.signals?.[key] !== at && next.signals[key] === at) {
+      if (before.signals?.[key] === undefined) delete next.signals[key];
+      else next.signals[key] = before.signals[key];
+    }
+  }
+  return next;
 }
