@@ -55,6 +55,7 @@ export function loadNextPage(): Promise<FeedResult> {
           rejected,
           seen,
           rates,
+          history,
           appendPage,
         } = useStore.getState();
         // Исключаем всё, что уже показывали: и отвергнутое, и просто
@@ -63,8 +64,20 @@ export function loadNextPage(): Promise<FeedResult> {
         // Суффикс круга отбрасываем: исключать надо товар, а не карточку.
         const hint = toHint(
           taste,
-          [...new Set([...seen, ...rejected].map(baseId))],
+          [
+            ...new Set(
+              [
+                ...useStore
+                  .getState()
+                  .deck.slice(useStore.getState().index)
+                  .map((p) => p.id),
+                ...rejected,
+                ...seen,
+              ].map(baseId),
+            ),
+          ],
           rates,
+          history,
         );
 
         const res = await fetch("/api/feed", {
