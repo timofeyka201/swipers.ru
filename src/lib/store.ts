@@ -11,7 +11,8 @@ import {
   emptyTaste,
   learn,
   learnReason,
-  learnVisit,
+  learnAction,
+  undoLearning,
   unlearn,
   type RejectReason,
   type Taste,
@@ -22,10 +23,13 @@ import type { Product } from "./types";
 export type CartItem = { product: Product; qty: number; sku?: string };
 export type Decision = "like" | "dislike" | "super";
 type HistoryEntry = {
+  at?: number;
   addedLike?: boolean;
   addedCart?: boolean;
   dislikesBefore?: number;
   reasonBefore?: Product | null;
+  tasteBefore?: Taste;
+  tasteAfter?: Taste;
   product: Product;
   decision: Decision;
 };
@@ -410,6 +414,10 @@ export const useStore = create<State>()(
           }
         }
 
+        const learnedTaste =
+          decision === "dislike"
+            ? learn(s.taste, product, decision)
+            : learnAction(s.taste, product, "like");
         set({
           updatedAt: Date.now(),
           deck,
@@ -424,6 +432,9 @@ export const useStore = create<State>()(
             {
               product,
               decision,
+              at: Date.now(),
+              tasteBefore: s.taste,
+              tasteAfter: learnedTaste,
               addedLike: liked !== s.liked,
               addedCart: cart !== s.cart,
               dislikesBefore: s.dislikesSinceAsk,
@@ -432,7 +443,7 @@ export const useStore = create<State>()(
             ...s.history,
           ].slice(0, 30),
 
-          taste: learn(s.taste, product, decision),
+          taste: learnedTaste,
           watch:
             decision === "dislike" ? s.watch : rememberPrice(s.watch, product),
         });
@@ -492,7 +503,10 @@ export const useStore = create<State>()(
             ),
             // Отменённое решение снимается ровно в том весе, в каком было
             // начислено, а не противоположным свайпом.
-            taste: unlearn(s.taste, last.product, last.decision),
+            taste:
+              last.tasteBefore && last.tasteAfter
+                ? undoLearning(s.taste, last.tasteBefore, last.tasteAfter)
+                : unlearn(s.taste, last.product, last.decision),
           };
         }),
 
@@ -508,6 +522,7 @@ export const useStore = create<State>()(
             ? s
             : {
                 liked: [product, ...s.liked],
+                taste: learnAction(s.taste, product, "like"),
                 watch: rememberPrice(s.watch, product),
                 updatedAt: Date.now(),
               },
@@ -523,6 +538,7 @@ export const useStore = create<State>()(
               }
             : {
                 wishlist: [product, ...s.wishlist],
+                taste: learnAction(s.taste, product, "wish"),
                 watch: rememberPrice(s.watch, product),
                 updatedAt: Date.now(),
               };
@@ -676,7 +692,7 @@ export const useStore = create<State>()(
         set((s) => ({
           // Уход в магазин учит ленту сильнее любого свайпа: это ближайшее к
           // покупке действие, которое витрина вообще видит.
-          taste: learnVisit(s.taste, product),
+          taste: learnAction(s.taste, product, "shop"),
           orders: [
             {
               id: product.id,
@@ -770,7 +786,7 @@ export const useStore = create<State>()(
     }),
     {
       name: "swipe1688",
-      version: 6,
+      version: 7,
       storage: createJSONStorage(() => localStorage),
       migrate: (state) => ({
         ...withoutGameState(state),

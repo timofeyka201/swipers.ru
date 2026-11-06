@@ -37,6 +37,26 @@ export default function Home() {
   const [tick, setTick] = useState(0);
   const inflight = useRef(false);
   const active = s.deck[s.index];
+  const lastImpression = useRef("");
+  useEffect(() => {
+    if (
+      !active ||
+      lastImpression.current === active.id ||
+      !hydrated ||
+      !s.onboarded ||
+      coach ||
+      filtersOpen ||
+      product
+    )
+      return;
+    lastImpression.current = active.id;
+    track("view", {
+      product: active.id,
+      category: active.category,
+      why: active.why,
+      algorithm: "hybrid-v1",
+    });
+  }, [active, hydrated, s.onboarded, coach, filtersOpen, product]);
   const refine =
     !!s.pendingReason &&
     (s.taste.budget === undefined ||
@@ -110,6 +130,8 @@ export default function Home() {
     if (!p) return;
     track("swipe", {
       decision,
+      why: p.why,
+      algorithm: "hybrid-v1",
       product: p.id,
       category: p.category,
       group: p.group,
