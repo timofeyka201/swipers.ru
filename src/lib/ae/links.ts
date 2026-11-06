@@ -91,6 +91,11 @@ export async function noteClick(
  * местах, где она может лежать, а не только там, где обещано в документации.
  */
 function findLink(body: unknown): { target?: string; erid?: string } {
+  const root = body as { status?: string };
+  if (root?.status && root.status !== "on") {
+    console.error("Креатив AE не активен:", root.status);
+    return {};
+  }
   const paths = [
     ["targetLink"],
     ["data", "targetLink"],
@@ -105,7 +110,15 @@ function findLink(body: unknown): { target?: string; erid?: string } {
       body,
     );
 
-  const target = paths.map(at).find((v) => typeof v === "string" && v);
+  const target = paths.map(at).find((v) => {
+    if (typeof v !== "string") return false;
+    try {
+      const u = new URL(v);
+      return u.protocol === "https:" && !u.username && !u.password;
+    } catch {
+      return false;
+    }
+  });
   const erid = [
     ["eridToken"],
     ["data", "eridToken"],
@@ -128,17 +141,48 @@ let placementMemo: string | null = null;
  */
 async function placement(userId: string): Promise<string | null> {
   const configured = process.env.AE_PLACEMENT_ID?.trim();
-  if (configured) return configured;
   if (placementMemo) return placementMemo;
   try {
     const res = await aeFetch<{
       placements?: { id?: string | number }[];
       data?: { id?: string | number }[];
     }>(`/api/v1/users/${userId}/placements/active`);
-    const first = (res.placements ?? res.data ?? [])[0]?.id;
+    const rows = (res.placements ?? res.data ?? []) as {
+      id?: string | number;
+      link?: string;
+    }[];
+    let host = "swipers.ru";
+    try {
+      host = new URL(process.env.APP_URL || "https://swipers.ru").hostname;
+    } catch {}
+    const selected = configured
+      ? rows.find((p) => String(p.id) === configured)
+      : undefined;
+    if (selected) return (placementMemo = String(selected.id));
+    if (configured)
+      console.error(
+        "Настроенная AE_PLACEMENT_ID не найдена среди активных площадок; ищу площадку сайта",
+      );
+    const matched = rows.filter((p) => {
+      try {
+        return (
+          new URL(p.link || "").hostname.replace(/^www\./, "") ===
+          host.replace(/^www\./, "")
+        );
+      } catch {
+        return false;
+      }
+    });
+    const first = (
+      matched.length === 1
+        ? matched[0]
+        : rows.length === 1
+          ? rows[0]
+          : undefined
+    )?.id;
     if (first === undefined) {
       console.error(
-        "У партнёра нет активных площадок — партнёрские ссылки создавать не на что.",
+        "Не удалось однозначно выбрать активную площадку сайта — проверьте AE_PLACEMENT_ID.",
       );
       return null;
     }
@@ -166,10 +210,20 @@ export async function affiliateLink(
   const hit = cache[productId];
   if (hit) return hit;
 
-  if (!aeConfigured()) return null;
+  if (!aeConfigured()) {
+    console.error(
+      "Партнёрская ссылка: не заданы AE_CLIENT_ID / AE_CLIENT_SECRET в окружении сервиса",
+    );
+    return null;
+  }
   const userId = await aeUserId();
   const placementId = userId ? await placement(userId) : null;
-  if (!userId || !placementId) return null;
+  if (!userId || !placementId) {
+    console.error(
+      "Партнёрская ссылка: не определён партнёр или площадка; проверьте AE_USER_ID / AE_PLACEMENT_ID",
+    );
+    return null;
+  }
 
   const pending = inFlight.get(productId);
   if (pending) return pending;
@@ -201,7 +255,12 @@ export async function affiliateLink(
       }
       const creative: Creative = { target, erid, createdAt: Date.now() };
       (await readCache())[productId] = creative;
-      await saveCache();
+      await saveCache().catch((e) =>
+        console.error(
+          "Кэш креатива не сохранён:",
+          e instanceof Error ? e.message : "ошибка",
+        ),
+      );
       return creative;
     } catch (e) {
       console.error(

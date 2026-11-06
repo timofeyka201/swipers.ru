@@ -8,6 +8,7 @@ import {
 } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { IconCart, IconHeart, IconX } from "./Icons";
+import ReviewCount from "./ReviewCount";
 import PhotoGallery from "./PhotoGallery";
 import { swipeDecision, swipeExit } from "@/lib/gestures";
 import { BuyButton } from "./Ui";
@@ -149,7 +150,7 @@ export default function SwipeCard({
           <div className="ui-rating">
             {p.rating !== undefined && <b>★ {p.rating.toFixed(1)}</b>}
             <span>
-              {p.reviewsCount ? compact(p.reviewsCount) + " отзывов" : ""}
+              <ReviewCount product={p} />
               {p.soldCount ? " · " + compact(p.soldCount) + " заказов" : ""}
             </span>
           </div>

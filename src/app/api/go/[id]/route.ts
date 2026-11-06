@@ -64,6 +64,9 @@ export async function GET(
     status: 302,
     // Переход персональный и меняется вместе с настройками партнёрки —
     // кэшировать его ни браузеру, ни прокси не нужно.
-    headers: { "Cache-Control": "no-store" },
+    headers: {
+      "Cache-Control": "no-store",
+      "X-Swiper-Link": creative ? "affiliate" : "direct",
+    },
   });
 }
